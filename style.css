@@ -1,0 +1,60 @@
+/* Size cap for the modal */
+#topHitsModal .modal-dialog { max-width: 95vw; }
+#topHitsModal .modal-content { height: 75vh; }
+
+/* Create an internal scrolling flex area */
+#topHitsModal .modal-body {
+    display: flex;       /* flex parent */
+    overflow: hidden;    /* prevent the body itself from growing the page */
+    padding: 0;          /* optional: let Tabulator own the space edge-to-edge */
+}
+
+/* Force true vertical center for single-row headers */
+.tabulator-header .tabulator-col .tabulator-col-content {
+  display: flex !important;              /* turn the header content into a flex box */
+  align-items: center !important;        /* vertical center */
+  justify-content: center !important;    /* horizontal center (matches headerHozAlign) */
+  height: 42px;               /* pick a consistent header height (36–48px common) */
+  min-height: 42px;               /* pick a consistent header height (36–48px common) */
+  line-height: 1.2;           /* avoid odd baseline offsets */
+  padding: 0;
+  background-color: transparent !important;
+}
+
+/* Keep the title and sort icon centered on one baseline */
+.tabulator-col .tabulator-col-title {
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  gap: .25rem;
+  white-space: nowrap;
+  background-color: transparent !important;
+}
+
+/* Scope everything to THIS table */
+.tabulator-row.tabulator-row-even {
+  background-color: transparent !important;   /* remove even-row background */
+}
+
+/* If you want ALL rows flat (no background anywhere), include this too */
+.tabulator-row {
+  background-color: transparent;              /* odd rows transparent as well */
+}
+
+/* Custom hover color */
+.tabulator-row:hover {
+  background-color: #eef5ff !important;       /* your hover color */
+}
+
+/* Keep selection clearly distinct (optional but recommended) */
+.tabulator-row.tabulator-selected {
+  background-color: #dbeafe !important;       /* selected */
+}
+.tabulator-row.tabulator-selected:hover {
+  background-color: #cfe3ff !important;       /* selected + hover */
+}
+
+/* If cells carried their own backgrounds in your theme, normalize them */
+.tabulator-cell {
+  background-color: transparent !important;
+}

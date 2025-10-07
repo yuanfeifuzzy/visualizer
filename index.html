@@ -25,6 +25,7 @@
   <!-- Dropzone CSS -->
   <link rel="stylesheet" href="https://unpkg.com/dropzone@5/dist/min/dropzone.min.css" />
   <link href="https://unpkg.com/tabulator-tables@6.3.1/dist/css/tabulator.min.css" rel="stylesheet">
+  <link href="style.css" rel="stylesheet">
 </head>
 
 <body class="container-fluid bg-light">
@@ -151,17 +152,14 @@
 
   <!-- Top Hits Modal -->
   <div class="modal fade" id="topHitsModal" tabindex="-1" aria-labelledby="topHitsModalLabel" aria-hidden="true">
-      <div class="modal-dialog modal-xl modal-dialog-centered">
+      <div class="modal-dialog modal-xl modal-dialog-centered modal-dialog-scrollable">
         <div class="modal-content">
           <div class="modal-header">
-            <h5 class="modal-title" id="topHitsModalLabel">Hits</h5>
+            <h5 class="modal-title" id="topHitsModalLabel">Top Hits</h5>
             <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
           </div>
           <div class="modal-body">
             <div id="topHitsTable"></div>
-          </div>
-          <div class="modal-footer">
-            <button class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
           </div>
         </div>
       </div>

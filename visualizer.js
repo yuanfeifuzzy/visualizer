@@ -25,9 +25,11 @@
     x: null,
     y: null,
     library: null,
+    topHitsTable: null,
   };
 
   const q = id => R.root.getElementById(id);
+  const keyForRow = (row) => `${row.library}|` + R.smilesColumns.map(c => String(row?.[c] ?? "")).join("|");
   const readConfigForm = () => {
     return {
       font: q('fontFamily')?.value || "system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif",
@@ -111,8 +113,47 @@
     btnSaveConfig: q('btnSaveConfig'),
     configModal  : q('configModal'),
     encodingModal: q('encodingModal'),
+    topHitsModal : q('topHitsModal'),
     topHitsTable : q('topHitsTable'),
   }
+  const visibleCheck = {
+      title: "",
+      field: "selected",
+      width: 44,
+      headerSort: false,
+      titleFormatter: () => `<i class="bi bi-eye" aria-label="Toggle all"></i>`,
+
+      // Render a real checkbox in each cell
+      formatter: (cell) => {
+        const v = cell.getValue();
+        return `<input type="checkbox" aria-label="select row"${v ? " checked" : ""}>`;
+      },
+
+      // Toggle the underlying data when the cell is clicked
+      cellClick: (e, cell) => {
+        // Only toggle when clicking the checkbox (not column resize area etc.)
+        if ((e.target instanceof HTMLElement) && e.target.tagName === "INPUT") {
+          cell.setValue(e.target.checked, true);   // true = mutate data
+        } else {
+          // click anywhere in the cell toggles the checkbox
+          cell.setValue(!toBool(cell.getValue()), true);
+          const input = cell.getElement().querySelector('input[type="checkbox"]');
+          if (input) input.checked = toBool(cell.getValue());
+        }
+      },
+
+      // Header click: toggle all on/off
+      headerClick: (e, column) => {
+        const table = column.getTable();
+        const def = column.getDefinition();
+        const turnOn = !def._allChecked;           // simple flip-flop flag
+        def._allChecked = turnOn;
+
+        // Efficient bulk update
+        table.getRows().forEach(row => row.update({ selected: turnOn }));
+      },
+  };
+
   R.io = (() => {
     /** @param {Uint8Array} u8 */
     const isGzip = (u8) => u8 && u8.length >= 2 && u8[0] === 0x1f && u8[1] === 0x8b;
@@ -434,8 +475,50 @@
       const top  = Math.max(0, Math.round(lbox.top - gbox.top));
       mb.style.top = top + 'px';
     };
+    const assembleColumns = () => {
+      const smiles = {title: 'SMILES', columns: [], hozAlign: 'center'}
+      for (const c of R.smilesColumns) {
+        smiles.columns.push({
+          title: c.includes('_') ? c.split('_')[0].replace('c', 'BB') : c,
+          field: c,
+          width: R.config.structure.width,
+          height: R.config.structure.height,
+          formatter: (cell) => {
+            const smi = cell.getValue();
+            const { width, height } = R.config.structure;
+            return R.utilities.smilesSVG(smi, width, height);
+          }
+        });
+      }
+      const counts = {title: 'Count', columns: []};
+      for (const c of R.countColumns) {counts.columns.push({title: c.replace('count_', ''), field: c})}
+      const scores = {title: 'z-score', columns: []};
+      for (const c of R.scoreColumns) {scores.columns.push({title: c.replace('zscore_', ''), field: c})}
+      const columns = [
+        visibleCheck,
+        {title: 'Library', field: 'library', frozen: true},
+        {title: 'Axis', field: 'axis', frozen: true},
+        smiles,
+        {title: 'Encodings', field: 'copies'},
+        counts, scores
+      ]
+
+      if (R.columns.includes('history_hits')) {
+        columns.push({title: 'HH', field: 'history_hits', sorter: 'number', formatter: (cell) => cell.getValue() ? cell.getValue().split(',').length : 0})
+      }
+      return columns
+    };
+    const stableRedraw = (table) => {
+      if (!table) return;
+      table.redraw(true);                                // now
+      requestAnimationFrame(() => table.redraw(true));   // next frame
+      setTimeout(() => table.redraw(true), 350);         // after fade transition (~300ms)
+    };
+
     return { smilesSVG, drawSMILES, makeDraggable, assembleCompoundCard, assembleCompoundName,
-             assembleKV, assembleCountScore, assembleHoverText, alignModebarWithLegend };
+             assembleKV, assembleCountScore, assembleHoverText, alignModebarWithLegend,
+             assembleColumns, stableRedraw
+           };
   })();
 
   function populateSelector() {
@@ -487,23 +570,25 @@
       if ([3, 4, 5].includes(ax)) return cfg.colors.di;
       return cfg.colors.tri;
     };
-    const makeTrace = (name, rows, size=15) => {
+    const makeTrace = (name, rows, size=20) => {
       if (!Array.isArray(rows) || rows.length === 0) return null;
-      return {
+      const data = {
         name,
         type: 'scattergl',
         mode: 'markers',
-        marker: { color: rows.map(r => colorForAxis(r?.axis ?? 0)), size },
+        marker: { color: rows.map(r => colorForAxis(r?.axis ?? 0)), size: size},
         x: rows.map(r => r?.[x]),
         y: rows.map(r => r?.[y]),
         customdata: rows.map(r => {
-          return {SMILES: r.SMILES ?? '', c1_smiles: r.c1_smiles ?? '', c2_smiles: r.c2_smiles ?? '', c3_smiles: r.c3_smiles ?? ''};
+          return {SMILES: r.SMILES ?? '', c1_smiles: r.c1_smiles ?? '', c2_smiles: r.c2_smiles ?? '',
+                  c3_smiles: r.c3_smiles ?? '', key: r.key};
         }),
         text: name.includes('sython') ? rows.map(r => R.utilities.assembleHoverText(r, x, y)) : '',
         hoverinfo: 'text',
         hovertemplate: `%{text}<extra></extra>`,
         showlegend: name.includes('sython')
       };
+      return data
     };
 
     let layout = {
@@ -644,23 +729,70 @@
     R.utilities.alignModebarWithLegend(holder);
   }
 
-  function renderTopHits() {
-    const counts = {title: 'Count', columns: []};
-    for (const c of R.countColumns) {counts.columns.push({title: c.replace('count_', ''), field: c})}
-    const scores = {title: 'z-score', columns: []};
-    for (const c of R.scoreColumns) {scores.columns.push({title: c.replace('zscore_', ''), field: c})}
-    const columns = [
-        {title: 'Library', field: 'library', frozen: true},
-        // {title: 'BB1', field: 'c1_smiles', frozen: true},
-        // {title: 'BB2', field: 'c2_smiles', frozen: true},
-        // {title: 'BB3', field: 'c3_smiles', frozen: true},
-        {title: 'Encodings', field: 'copies'},
-        counts, scores
-      ];
-    let table = new Tabulator('#topHitsTable', {
+  function buildTopHitsTable() {
+    const container = R.els.topHitsTable;
+    container.innerHTML = '';
+
+    R.topHitsTable = new Tabulator(container, {
       data: R.tops,
-      columns: columns
-    })
+      columns: R.utilities.assembleColumns(),
+      layout: 'fitDataFill',
+      height: '100%',
+      columnDefaults: { hozAlign: "center",  vertAlign: "middle", headerHozAlign: "center" },
+      nestedFieldSeparator: "->"
+    });
+
+    R.topHitsTable.on('tableBuilt', () => {
+      R.utilities.drawSMILES(R.els.topHitsTable);
+    });
+    return R.topHitsTable
+  }
+
+  function preparePage(rows) {
+    if (!Array.isArray(rows)) throw new TypeError("data must be an array");
+
+    const keyForRow = (row) => {
+      if (Object.prototype.hasOwnProperty.call(row, 'compound') && row.compound != null && row.compound !== '') {
+        return String(row.compound);
+      }
+        return [String(row.library ?? ''), ...R.smilesColumns.map(c => String(row?.[c] ?? ''))].join('|');
+      }
+    const findColumns = (columns, prefix = '', suffix = '', case_sensitive = false) => {
+      const normPrefix = case_sensitive ? prefix : prefix.toLowerCase();
+      const normSuffix = case_sensitive ? suffix : suffix.toLowerCase();
+
+      const cs = [];
+      for (const column of columns) {
+        const normColumn = case_sensitive ? column : column.toLowerCase();
+
+        const okPrefix = prefix ? normColumn.startsWith(normPrefix) : true;
+        const okSuffix = suffix ? normColumn.endsWith(normSuffix) : true;
+
+        if (okPrefix && okSuffix) {
+          cs.push(column);
+        }
+      }
+
+      if (cs.length === 0) {
+        throw Error(`No column was found with prefix "${prefix}" and suffix "${suffix}"`);
+      }
+      return cs;
+    }
+    const columns = Object.keys(rows[0]);
+
+    R.columns = columns;
+    R.countColumns = findColumns(columns, 'count_')
+    R.scoreColumns = findColumns(columns, 'zscore_')
+    R.smilesColumns = findColumns(columns, '', '_smiles')
+    R.libraries = [...new Set((rows ?? []).map(r => r.library))];
+
+    R.rows = []
+    for (const row of rows) {
+      row.key = keyForRow(row);
+      R.rows.push(row)
+    }
+
+    populateSelector();
   }
 
   function processData(rows) {
@@ -727,16 +859,16 @@
     // Convert isBetter into an Array.sort comparator (descending “better first”)
     const cmp = (a, b) => (isBetter(a, b) ? -1 : isBetter(b, a) ? 1 : 0);
 
-    const tops = [];                // [{ key, rows: [...] }]
+    const tops = [];
     const uniques = [];
-    const duplicates = {};          // key -> [indexes]
+    const duplicates = {};
 
     const compounds = groups(rows, ['library', ...R.smilesColumns.slice(0, -1)])
     for (const [key, arr] of compounds) {
       // best (top-1)
       let best = arr[0];
       for (let i = 1; i < arr.length; i++) if (isBetter(arr[i], best)) best = arr[i];
-      uniques.push({ ...best, copies: arr.length });
+      uniques.push({ ...best, copies: arr.length, key: key });
 
       // duplicates by indexField
       if (arr.length > 1) {
@@ -746,8 +878,15 @@
 
     const libraries = groups(uniques, ['library']);
     for (const [lib, arr] of libraries) {
-      const top = arr.length <= topN ? arr.slice() : arr.filter(r => r.axis === 6).sort(cmp).slice(0, topN);
-      tops.push(...top);
+      console.log(arr, R.x)
+      const values = arr.filter(v => (v.axis === 6) && (v[R.x] >= 0.1))
+      console.log(values)
+      // const top = arr.length <= topN ? arr.filter(r => r.axis === 6) : arr.filter(r => r.axis === 6).sort(cmp).slice(0, topN);
+      const top = values.sort((a, b) => b[R.x] - a[R.x]).slice(0, topN);
+      for (let t of top) {
+        t.selected = 1
+        tops.push(t);
+      }
     }
 
     R.tops = tops;
@@ -756,7 +895,7 @@
 
     populateSelector();
     renderChart();
-    renderTopHits()
+    buildTopHitsTable();
     bindEvents();
   }
 
@@ -786,7 +925,26 @@
           dd.hide();
         } catch (_) { /* safe no-op if bootstrap not present */ }
 
-        renderChart()
+        renderChart();
+        const gd = R.els.chartPanel;
+
+        const selections = R.topHitsTable.getData().filter(d => d.library === R.library);
+        const keys = selections.map(d => d.key)
+        gd.data.forEach((trace, traceID) => {
+          let indices = [];
+          for (let i=0; i < trace.customdata.length; i++) {
+            const key = trace.customdata[i]['key'];
+            if (keys.includes(key)) indices.push(i)
+          }
+          Plotly.restyle(gd,
+            { selectedpoints: [indices],
+              "selected.marker.size": 30,
+              "selected.marker.line.width": 2,
+              "selected.marker.line.color": '#000',
+              "unselected.marker.opacity": 0.4,
+            },
+            [traceID]);
+        })
       });
     }
     bindDropdown(R.els.xSel, R.els.btnX, 'X')
@@ -826,6 +984,16 @@
       })
     }
     plotlyBind();
+
+    R.els.topHitsModal.addEventListener('shown.bs.modal', () => {
+      buildTopHitsTable();
+    });
+
+    R.els.topHitsModal.addEventListener('hidden.bs.modal', () => {
+      try { R.topHitsTable?.destroy(); } catch(_) {}
+      R.topHitsTable = null;
+      R.els.topHitsTable.innerHTML = '';
+    });
   }
 
   // ---------- Public API ----------
@@ -835,9 +1003,9 @@
       GlobalConfig();
 
       if (opts.data) {
-        R.io.loadData(opts.data, { onComplete: processData }).catch(console.error);
+        R.io.loadData(opts.data, { onComplete: preparePage }).catch(console.error);
       } else if (opts.url) {
-        await R.io.loadFile(opts.url, { onComplete: processData }).catch(console.error);
+        await R.io.loadFile(opts.url, { onComplete: preparePage }).catch(console.error);
       } else {
         R.els.uploadPanel.classList.remove('d-none')
       }
