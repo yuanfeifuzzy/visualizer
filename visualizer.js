@@ -394,8 +394,48 @@
       }
 
       return card
-    }
-    return { smilesSVG, drawSMILES, makeDraggable, assembleCompoundCard };
+    };
+    const assembleCompoundName = (row, addCopyNumber=false, addButton=false) => {
+      let compound = row.compound ? row.compound : `VC${row.index}`;
+      if ('copies' in row && row.copies > 1 && addCopyNumber) {
+        if (addButton) {
+          const key = `${row.library}|` + R.smilesColumns.map(s => row[s]).join('|')
+          const button = ' <button type="button" class="btn btn-outline-success rounded-pill btn-sm py-0" ' +
+                                'data-action="open-encoding" data-encoding-key="${key}">${row.copies}</button>';
+          compound += button
+        } else {
+          compound += ` [${row.copies}]`
+        }
+      }
+      return compound
+    };
+    const assembleKV = (k, v, tabulate=false) => { return tabulate ? `<tr><td>${k}</td><td>${v}</td></tr>` : `${k}: ${v}`};
+    const assembleCountScore = (row, x, y, tabulate=false) => {
+      let text = [];
+      text.push(assembleKV(`<b>${x.replace('zscore_', '')} (x)`, `${row[x.replace('zscore_', 'count_')]} (${row[x].toFixed(2)})</b>`, tabulate));
+      text.push(assembleKV(`<b>${y.replace('zscore_', '')} (y)`, `${row[y.replace('zscore_', 'count_')]} (${row[y].toFixed(2)})</b>`, tabulate));
+      const scores = R.scoreColumns.filter(c => (c !== x && c !== y));
+      for (const c of scores) text.push(assembleKV(`${c.replace('zscore_', '')}`, `${row[c.replace('zscore_', 'count_')]} (${row[c].toFixed(2)})`, tabulate));
+      if (row.history_hits) text.push(assembleKV('HH', `${(row.history_hits.match(/,/g) || []).length}`, tabulate));
+      return text
+    };
+    const assembleHoverText = (row, x, y) => {
+      let text = [`<b>${assembleCompoundName(row)}</b>`];
+      text.push(...assembleCountScore(row, x, y));
+      return text.join('<br>')
+    };
+    const alignModebarWithLegend = (gd) => {
+      const mb  = gd.querySelector('.modebar');
+      const leg = gd.querySelector('.legend');
+      if (!mb || !leg) return;
+
+      const gbox = gd.getBoundingClientRect();
+      const lbox = leg.getBoundingClientRect();
+      const top  = Math.max(0, Math.round(lbox.top - gbox.top));
+      mb.style.top = top + 'px';
+    };
+    return { smilesSVG, drawSMILES, makeDraggable, assembleCompoundCard, assembleCompoundName,
+             assembleKV, assembleCountScore, assembleHoverText, alignModebarWithLegend };
   })();
 
   function populateSelector() {
@@ -447,45 +487,6 @@
       if ([3, 4, 5].includes(ax)) return cfg.colors.di;
       return cfg.colors.tri;
     };
-    const alignModebarWithLegend = (gd) => {
-      const mb  = gd.querySelector('.modebar');
-      const leg = gd.querySelector('.legend');
-      if (!mb || !leg) return;
-
-      const gbox = gd.getBoundingClientRect();
-      const lbox = leg.getBoundingClientRect();
-      const top  = Math.max(0, Math.round(lbox.top - gbox.top));
-      mb.style.top = top + 'px';
-    }
-    const assembleCompoundName = (row, addCopyNumber=false, addButton=false) => {
-      let compound = row.compound ? row.compound : `VC${row.index}`;
-      if ('copies' in row && row.copies > 1 && addCopyNumber) {
-        if (addButton) {
-          const key = `${row.library}|` + R.smilesColumns.map(s => row[s]).join('|')
-          const button = ' <button type="button" class="btn btn-outline-success rounded-pill btn-sm py-0" ' +
-                                'data-action="open-encoding" data-encoding-key="${key}">${row.copies}</button>';
-          compound += button
-        } else {
-          compound += ` [${row.copies}]`
-        }
-      }
-      return compound
-    }
-    const assembleKV = (k, v, tabulate=false) => { return tabulate ? `<tr><td>${k}</td><td>${v}</td></tr>` : `${k}: ${v}`}
-    const assembleCountScore = (row, x, y, tabulate=false) => {
-      let text = [];
-      text.push(assembleKV(`<b>${x.replace('zscore_', '')} (x)`, `${row[x.replace('zscore_', 'count_')]} (${row[x].toFixed(2)})</b>`, tabulate));
-      text.push(assembleKV(`<b>${y.replace('zscore_', '')} (y)`, `${row[y.replace('zscore_', 'count_')]} (${row[y].toFixed(2)})</b>`, tabulate));
-      const scores = R.scoreColumns.filter(c => (c !== x && c !== y));
-      for (const c of scores) text.push(assembleKV(`${c.replace('zscore_', '')}`, `${row[c.replace('zscore_', 'count_')]} (${row[c].toFixed(2)})`, tabulate));
-      if (row.history_hits) text.push(assembleKV('HH', `${(row.history_hits.match(/,/g) || []).length}`, tabulate));
-      return text
-    }
-    const assembleHoverText = (row, x, y) => {
-      let text = [`<b>${assembleCompoundName(row)}</b>`];
-      text.push(...assembleCountScore(row, x, y));
-      return text.join('<br>')
-    }
     const makeTrace = (name, rows, size=15) => {
       if (!Array.isArray(rows) || rows.length === 0) return null;
       return {
@@ -498,7 +499,7 @@
         customdata: rows.map(r => {
           return {SMILES: r.SMILES ?? '', c1_smiles: r.c1_smiles ?? '', c2_smiles: r.c2_smiles ?? '', c3_smiles: r.c3_smiles ?? ''};
         }),
-        text: name.includes('sython') ? rows.map(r => assembleHoverText(r, x, y)) : '',
+        text: name.includes('sython') ? rows.map(r => R.utilities.assembleHoverText(r, x, y)) : '',
         hoverinfo: 'text',
         hovertemplate: `%{text}<extra></extra>`,
         showlegend: name.includes('sython')
@@ -640,24 +641,7 @@
     const plotter = (global.Plotly && (global.Plotly.react || global.Plotly.newPlot || global.Plotly.plot));
     plotter(holder, traces.filter(r => r), layout, config)
 
-    alignModebarWithLegend(holder);
-    holder.on('plotly_relayout', () => alignModebarWithLegend(holder));
-    window.addEventListener('resize', () => alignModebarWithLegend(holder));
-
-    if (holder.removeAllListeners) holder.removeAllListeners('plotly_click');
-
-    holder.on('plotly_click', function (data) {
-      const pt = data.points && data.points[0];
-      const text = pt.text ?? '';
-      if (!pt) return;
-
-      const smiles = pt.data.customdata[pt.pointNumber];
-      const card = R.utilities.assembleCompoundCard(text, smiles);
-
-      R.utilities.drawSMILES(card);
-      // attachConnector(card, data.event.clientX, data.event.clientY);
-      // selectPoint(holder, pt.curveNumber, pt.pointNumber, {base: 15, big: 30, multi: true});
-    })
+    R.utilities.alignModebarWithLegend(holder);
   }
 
   function renderTopHits() {
@@ -821,15 +805,34 @@
       bootstrap.Modal.getInstance(R.els.configModal)?.show();
     });
 
+    const plotlyBind = () => {
+      const holder = R.els.chartPanel;
+      holder.on('plotly_relayout', () => R.utilities.alignModebarWithLegend(holder));
+      window.addEventListener('resize', () => R.utilities.alignModebarWithLegend(holder));
+
+      if (holder.removeAllListeners) holder.removeAllListeners('plotly_click');
+
+      holder.on('plotly_click', function (data) {
+        const pt = data.points && data.points[0];
+        const text = pt.text ?? '';
+        if (!pt) return;
+
+        const smiles = pt.data.customdata[pt.pointNumber];
+        const card = R.utilities.assembleCompoundCard(text, smiles);
+
+        R.utilities.drawSMILES(card);
+        // attachConnector(card, data.event.clientX, data.event.clientY);
+        // selectPoint(holder, pt.curveNumber, pt.pointNumber, {base: 15, big: 30, multi: true});
+      })
+    }
+    plotlyBind();
   }
 
   // ---------- Public API ----------
   global.Visualizer = {
     async init(opts = {}) {
-      R.root    = opts.root || document;
-
+      R.root = opts.root || document;
       GlobalConfig();
-      // bindEvents();
 
       if (opts.data) {
         R.io.loadData(opts.data, { onComplete: processData }).catch(console.error);
@@ -840,5 +843,4 @@
       }
     },
   };
-
 })(window);
