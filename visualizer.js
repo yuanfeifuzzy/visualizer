@@ -19,12 +19,14 @@
     countColumns: [],
     scoreColumns: [],
     smilesColumns: [],
+    hits: [],
     tops: [],
     uniques: [],
     duplicates: {},
     x: null,
     y: null,
     library: null,
+    hitsTable: null,
     topHitsTable: null,
   };
 
@@ -97,9 +99,10 @@
   }
   const GlobalConfig = () => {
     const cfg = readConfigForm();
+    R.config = cfg;
+
     document.body.style.fontFamily = cfg.font;
     document.body.style.fontSize   = `${cfg.fontSize}px`;
-    R.config = cfg;
   }
 
   R.els = {
@@ -118,46 +121,11 @@
     btnSaveConfig: q('btnSaveConfig'),
     configModal  : q('configModal'),
     encodingModal: q('encodingModal'),
+    hitsModal : q('hitsModal'),
+    hitsTable : q('hitsTable'),
     topHitsModal : q('topHitsModal'),
     topHitsTable : q('topHitsTable'),
   }
-  const visibleCheck = {
-      title: "",
-      field: "selected",
-      width: 44,
-      headerSort: false,
-      titleFormatter: () => `<i class="bi bi-eye" aria-label="Toggle all"></i>`,
-
-      // Render a real checkbox in each cell
-      formatter: (cell) => {
-        const v = cell.getValue();
-        return `<input type="checkbox" aria-label="select row"${v ? " checked" : ""}>`;
-      },
-
-      // Toggle the underlying data when the cell is clicked
-      cellClick: (e, cell) => {
-        // Only toggle when clicking the checkbox (not column resize area etc.)
-        if ((e.target instanceof HTMLElement) && e.target.tagName === "INPUT") {
-          cell.setValue(e.target.checked, true);   // true = mutate data
-        } else {
-          // click anywhere in the cell toggles the checkbox
-          cell.setValue(!toBool(cell.getValue()), true);
-          const input = cell.getElement().querySelector('input[type="checkbox"]');
-          if (input) input.checked = toBool(cell.getValue());
-        }
-      },
-
-      // Header click: toggle all on/off
-      headerClick: (e, column) => {
-        const table = column.getTable();
-        const def = column.getDefinition();
-        const turnOn = !def._allChecked;           // simple flip-flop flag
-        def._allChecked = turnOn;
-
-        // Efficient bulk update
-        table.getRows().forEach(row => row.update({ selected: turnOn }));
-      },
-  };
 
   R.io = (() => {
     /** @param {Uint8Array} u8 */
@@ -276,13 +244,15 @@
     }
     const smilesSVG = (smi, width, height) => {
       const id = 'svg_'+Math.random().toString(36).slice(2,9);
-      return `<svg id="${id}" class="smiles-svg" viewBox="0 0 ${width} ${height}" data-smiles="${smi || 'C'}"></svg>`;
+      return `<svg id="${id}" class="smiles-svg" viewBox="0 0 ${width} ${height}" data-smiles="${smi || ''}"></svg>`;
     };
     const drawSMILES = (el) => {
       initRDKitModule().then((RDKit) => {
         el.querySelectorAll('.smiles-svg').forEach((holder) => {
-          const smiles = holder.dataset.smiles;
-          const [ , , vw = 240, vh = 100 ] = (holder.getAttribute('viewBox') || '0 0 240 100').split(/\s+/);
+          const smiles = holder.dataset.smiles.split(' ')[0];
+          if (!smiles) return
+          const vw = R.config.structure.width || 240;
+          const vh = R.config.structure.width || 100;
 
           const mol = RDKit.get_mol(smiles);
 
@@ -493,11 +463,10 @@
           title: c.includes('_') ? c.split('_')[0].replace('c', 'BB') : c,
           field: c,
           width: R.config.structure.width,
-          height: R.config.structure.height,
           formatter: (cell) => {
-            const smi = cell.getValue();
-            const { width, height } = R.config.structure;
-            return R.utilities.smilesSVG(smi, width, height);
+            const html = R.utilities.smilesSVG(cell.getValue(), R.config.structure.width, R.config.structure.height);
+            requestAnimationFrame(() => R.utilities.drawSMILES(cell.getElement()));
+            return html
           }
         });
       }
@@ -506,7 +475,6 @@
       const scores = {title: 'z-score', columns: []};
       for (const c of R.scoreColumns) {scores.columns.push({title: c.replace('zscore_', ''), field: c})}
       const columns = [
-        visibleCheck,
         {title: 'Library', field: 'library', frozen: true},
         {title: 'Axis', field: 'axis', frozen: true},
         smiles,
@@ -525,10 +493,23 @@
       requestAnimationFrame(() => table.redraw(true));   // next frame
       setTimeout(() => table.redraw(true), 350);         // after fade transition (~300ms)
     };
+    const tabulize = (el, data, columns, modal) => {
+      el.innerHTML = '';
+      const table = new Tabulator(el, {
+        data: data,
+        columns: columns,
+        layout: 'fitDataFill',
+        height: '100%',
+        nestedFieldSeparator: "->",
+        columnDefaults: { hozAlign: "center",  vertAlign: "middle", headerHozAlign: "center" },
+      });
+
+      return table;
+    }
 
     return { smilesSVG, drawSMILES, makeDraggable, assembleCompoundCard, assembleCompoundName,
              assembleKV, assembleCountScore, assembleHoverText, alignModebarWithLegend,
-             assembleColumns, stableRedraw, keyForRow
+             assembleColumns, stableRedraw, keyForRow, tabulize
            };
   })();
 
@@ -712,22 +693,62 @@
     R.utilities.alignModebarWithLegend(holder);
   }
 
+  function buildHitsTable() {
+    R.hitsTable = R.utilities.tabulize(R.els.hitsTable, R.hits, R.utilities.assembleColumns(), R.els.hitsModal);
+  }
+
   function buildTopHitsTable() {
-    const container = R.els.topHitsTable;
-    container.innerHTML = '';
+    const hits = R.hitsTable.getData();
+    let tops = []
+    if (hits.length > 0) {
+      const keys = hits.map(h => h.key);
+      tops = R.tops.map(t => (t.hits = keys.includes(t.key), t))
+    } else {
+      tops = R.tops.map(t => (t.hits = false, t))
+    }
 
-    R.topHitsTable = new Tabulator(container, {
-      data: R.tops,
-      columns: R.utilities.assembleColumns(),
-      layout: 'fitDataFill',
-      height: '100%',
-      columnDefaults: { hozAlign: "center",  vertAlign: "middle", headerHozAlign: "center" },
-      nestedFieldSeparator: "->"
-    });
+    const visibleCheck = {
+      title: "",
+      field: "selected",
+      width: 44,
+      headerSort: false,
+      titleFormatter: () => `<i class="bi bi-eye" aria-label="Toggle all"></i>`,
 
-    R.topHitsTable.on('tableBuilt', () => {
-      R.utilities.drawSMILES(R.els.topHitsTable);
-    });
+      // Render a real checkbox in each cell
+      formatter: (cell) => {
+        const v = cell.getValue();
+        return `<input type="checkbox" aria-label="select row"${v ? " checked" : ""}>`;
+      },
+
+      // Toggle the underlying data when the cell is clicked
+      cellClick: (e, cell) => {
+        // Only toggle when clicking the checkbox (not column resize area etc.)
+        if ((e.target instanceof HTMLElement) && e.target.tagName === "INPUT") {
+          cell.setValue(e.target.checked, true);   // true = mutate data
+        } else {
+          // click anywhere in the cell toggles the checkbox
+          cell.setValue(!toBool(cell.getValue()), true);
+          const input = cell.getElement().querySelector('input[type="checkbox"]');
+          if (input) input.checked = toBool(cell.getValue());
+        }
+      },
+
+      // Header click: toggle all on/off
+      headerClick: (e, column) => {
+        const table = column.getTable();
+        const def = column.getDefinition();
+        const turnOn = !def._allChecked;           // simple flip-flop flag
+        def._allChecked = turnOn;
+
+        // Efficient bulk update
+        table.getRows().forEach(row => row.update({ selected: turnOn }));
+      },
+  };
+    const hitsYesNo = { title: "Hits", field: "hits",
+      formatter:"tickCross", formatterParams:{ allowEmpty:true, allowTruthy:true,
+        tickElement:"<i class='fa fa-check'></i>", crossElement:"<i class='fa fa-times'></i>",}};
+    const columns = [visibleCheck, hitsYesNo, ...R.utilities.assembleColumns()]
+    R.topHitsTable = R.utilities.tabulize(R.els.topHitsTable, tops, columns, R.els.topHitsModal);
     return R.topHitsTable
   }
 
@@ -863,16 +884,6 @@
       })
     }
     plotlyBind();
-
-    R.els.topHitsModal.addEventListener('shown.bs.modal', () => {
-      buildTopHitsTable();
-    });
-
-    R.els.topHitsModal.addEventListener('hidden.bs.modal', () => {
-      try { R.topHitsTable?.destroy(); } catch(_) {}
-      R.topHitsTable = null;
-      R.els.topHitsTable.innerHTML = '';
-    });
   }
 
   function preparePage(rows) {
@@ -905,8 +916,12 @@
     R.smilesColumns = findColumns(columns, '', '_smiles')
     R.libraries = [...new Set((rows ?? []).map(r => r.library))];
     R.rows = rows.map(row => (row.key = R.utilities.keyForRow(row), row));
+
     populateSelector();
     processData();
+
+    buildHitsTable();
+    buildTopHitsTable();
     renderChart();
     bindEvents();
   }
