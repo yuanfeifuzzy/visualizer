@@ -628,7 +628,7 @@
       const yMax = ysAll.length ? Math.max(0, ...ysAll) : 1;
 
       const axisDefault = {
-        // mirror: true,
+        mirror: true,
         nticks: 3,
         zeroline: false,
         showgrid: false,
@@ -680,7 +680,7 @@
         // Add in-panel title: top-left of the facet
         layout.annotations.push({
           text: String(library), xref: `${trace.xaxis} domain`, yref: `${trace.yaxis} domain`,
-          x: 0.5, y: 1.0, xanchor: 'center', yanchor: 'bottom', showarrow: false, bordercolor: '#fff',
+          x: 0.5, y: 0.89, xanchor: 'center', yanchor: 'bottom', showarrow: false, bordercolor: '#fff',
           font: {size: R.config.fontSize, family: R.config.fontFamily, color: maximum >= 1 ? '#ff0000' : '#000000'}
         });
       }
