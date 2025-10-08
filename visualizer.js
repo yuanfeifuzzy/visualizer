@@ -29,7 +29,6 @@
   };
 
   const q = id => R.root.getElementById(id);
-  const keyForRow = (row) => `${row.library}|` + R.smilesColumns.map(c => String(row?.[c] ?? "")).join("|");
   const readConfigForm = () => {
     return {
       font: q('fontFamily')?.value || "system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif",
@@ -48,6 +47,8 @@
         width:  Number(q('structWidth')?.value || 240),
         height: Number(q('structHeight')?.value || 100),
       },
+
+      nTopHits: Number(q('nTopHits')?.value || 5),
 
       colors: {
         mono: q('colorMono')?.value || '#0d6efd',
@@ -81,6 +82,10 @@
     if (cfg.structure) {
       setNum('structWidth',  cfg.structure.width);
       setNum('structHeight', cfg.structure.height);
+    }
+
+    if (cfg.nTopHits) {
+      setNum('nTopHits', cfg.nTopHits);
     }
 
     // Colors
@@ -263,6 +268,12 @@
     return { loadFile, loadData };
   })();
   R.utilities = (() => {
+    const keyForRow = (row) => {
+      if (Object.prototype.hasOwnProperty.call(row, 'compound') && row.compound != null && row.compound !== '') {
+        return String(row.compound);
+      }
+        return [String(row.library ?? ''), ...R.smilesColumns.map(c => String(row?.[c] ?? ''))].join('|');
+    }
     const smilesSVG = (smi, width, height) => {
       const id = 'svg_'+Math.random().toString(36).slice(2,9);
       return `<svg id="${id}" class="smiles-svg" viewBox="0 0 ${width} ${height}" data-smiles="${smi || 'C'}"></svg>`;
@@ -517,12 +528,12 @@
 
     return { smilesSVG, drawSMILES, makeDraggable, assembleCompoundCard, assembleCompoundName,
              assembleKV, assembleCountScore, assembleHoverText, alignModebarWithLegend,
-             assembleColumns, stableRedraw
+             assembleColumns, stableRedraw, keyForRow
            };
   })();
 
   function populateSelector() {
-    const assembleOptions = (selector, options, tag, selected, btn) => {
+    const buildOptions = (selector, options, tag, selected, btn) => {
       if (!selector) return;
       selector.innerHTML = '';
       options.forEach(option => {
@@ -551,9 +562,9 @@
       y = scoreColumns[1];
     }
 
-    assembleOptions(R.els.xSel, scoreColumns, 'X', x, R.els.btnX);
-    assembleOptions(R.els.ySel, scoreColumns, 'Y', y, R.els.btnY)
-    assembleOptions(R.els.librarySel, ['All', ...R.libraries], 'Library', 'All', R.els.btnLibrary)
+    buildOptions(R.els.xSel, scoreColumns, 'X', x, R.els.btnX);
+    buildOptions(R.els.ySel, scoreColumns, 'Y', y, R.els.btnY)
+    buildOptions(R.els.librarySel, ['All', ...R.libraries], 'Library', 'All', R.els.btnLibrary)
     R.els.selectors.classList.remove('d-none')
   }
 
@@ -601,94 +612,75 @@
     let traces = [];
 
     if (library === 'All') {
-      const libs = (
-        R.libraries?.length
-          ? R.libraries.slice()
-          : Array.from(new Set(R.rows.map(r => r.library)))
-      ).filter(v => v && v !== 'All');
-      const n = libs.length;
-      const cols = Math.ceil(Math.sqrt(n));
-      const rows = Math.ceil(n / cols);
-      const lastRowCount = n - (rows - 1) * cols;
+      const libraries = R.libraries.filter(v => v && v !== 'All');
+      const n = libraries.length;
+      const columns = Math.ceil(Math.sqrt(n));
+      const rows = Math.ceil(n / columns);
+      const lastRowCount = n - (rows - 1) * columns;
 
-      const xsAll = [];
-      const ysAll = [];
-      for (const lib of libs) {
-        const subset = R.uniques.filter(r => (r.library ?? 'Unknown') === lib);
-        for (const s of subset) {
-          xsAll.push(s?.[x]);
-          ysAll.push(s?.[y]);
-        }
-      }
+      const xsAll = R.uniques.map(r => r[x]);
+      const ysAll = R.uniques.map(r => r[y]);
 
       const xMin = xsAll.length ? Math.min(0, ...xsAll) : 0;
       const xMax = xsAll.length ? Math.max(0, ...xsAll) : 1;
       const yMin = ysAll.length ? Math.min(0, ...ysAll) : 0;
       const yMax = ysAll.length ? Math.max(0, ...ysAll) : 1;
 
+      const axisDefault = {
+        // mirror: true,
+        nticks: 3,
+        zeroline: false,
+        showgrid: false,
+        linecolor: '#939393',
+        linewidth: 1,
+        ticks: 'outside',
+        ticklen: 1,
+        tickwidth: 1,
+        automargin: true,
+      };
+
       config.staticPlot = true;
       layout.margin.l = 90;
       layout.margin.t = 20;
-      layout.grid = {rows, columns: cols, pattern: 'independent', xgap: 0.1, ygap: 0.2, roworder: 'top to bottom'};
+      layout.grid = {rows, columns: columns, pattern: 'independent', xgap: 0.1, ygap: 0.2, roworder: 'top to bottom'};
       layout.annotations = [];
 
       for (let i = 0; i < n; i++) {
-        const lib = libs[i];
-        const subset = R.uniques.filter(r => (r.library ?? 'Unknown') === lib);
-        const trace = makeTrace(lib, subset, 10);
+        const library = libraries[i];
+        const subset = R.uniques.filter(r => r.library === library);
+        const maximum = Math.max(...subset.map(r => Number(r[x])));
+        const axisKey = k => k.replace(/^([xy])(.*)$/, '$1axis$2');
+        const trace = makeTrace(library, subset, 10);
 
         // Map to subplot axis pair: 1st subplot uses 'x','y'; others use 'x2','y2',...
-        const axIndex = i + 1;
-        trace.xaxis = (axIndex === 1) ? 'x' : `x${axIndex}`;
-        trace.yaxis = (axIndex === 1) ? 'y' : `y${axIndex}`;
+        const ax = i + 1;
+        trace.xaxis = (ax === 1) ? 'x' : `x${ax}`;
+        trace.yaxis = (ax === 1) ? 'y' : `y${ax}`;
         traces.push(trace);
 
         // facet coordinates
-        const rIdx = Math.floor(i / cols);   // 0..rows-1
-        const cIdx = i % cols;               // 0..cols-1
+        const rIdx = Math.floor(i / columns);   // 0..rows-1
+        const cIdx = i % columns;               // 0..cols-1
 
         // Tick label visibility rules
         const isLastRow = (rIdx === rows - 1);
         const isSecondLastRow = (rIdx === rows - 2);
-        const lastRowIncomplete = (lastRowCount > 0 && lastRowCount < cols);
+        const lastRowIncomplete = (lastRowCount > 0 && lastRowCount < columns);
         const showXticks = isLastRow || (lastRowIncomplete && isSecondLastRow && (cIdx >= lastRowCount));
         const showYticks = (cIdx === 0);
 
-        const xs = trace.x, ys = trace.y;
-        const xKey = (axIndex === 1) ? 'xaxis' : `xaxis${axIndex}`;
-        const yKey = (axIndex === 1) ? 'yaxis' : `yaxis${axIndex}`;
-
-        layout[xKey] = Object.assign(layout[xKey] || {}, {
-          showticklabels: !!showXticks,
-          range: [xMin * 0.9, xMax * 1.1],
-          nticks: 3,
-          zeroline: false,
-          showgrid: false,
-          linecolor: '#444',
-          ticks: 'outside',
-          tickLength: 1,
-          tickwidth: 1,
-          automargin: true
+        layout[axisKey(trace.xaxis)] = Object.assign(layout[axisKey(trace.xaxis)] || {}, {
+          showticklabels: !!showXticks, range: [xMin * 0.9, xMax * 1.1], ...axisDefault
         });
-        layout[yKey] = Object.assign(layout[yKey] || {}, {
-          showticklabels: !!showYticks,
-          range: [yMin * 0.9, yMax * 1.1],
-          nticks: 3,
-          zeroline: false,
-          showgrid: false,
-          linecolor: '#444',
-          ticks: 'outside',
-          tickLength: 1,
-          tickwidth: 1,
-          automargin: true
+        layout[axisKey(trace.yaxis)] = Object.assign(layout[axisKey(trace.yaxis)] || {}, {
+          showticklabels: !!showYticks, range: [yMin * 0.9, yMax * 1.1], ...axisDefault
         });
 
         // Add in-panel title: top-left of the facet
         layout.annotations.push({
-          text: String(lib),
-          xref: (axIndex === 1) ? 'x domain' : `x${axIndex} domain`,
-          yref: (axIndex === 1) ? 'y domain' : `y${axIndex} domain`,
-          x: 0.5, y: 1.0, xanchor: 'center', yanchor: 'bottom', showarrow: false, font: {size: 12}
+          text: String(library), xref: `${trace.xaxis} domain`, yref: `${trace.yaxis} domain`,
+          x: 0.5, y: 1.0, xanchor: 'center', yanchor: 'bottom', showarrow: false, bordercolor: '#fff',
+          font: {size: R.config.fontSize, family: R.config.fontFamily, color: maximum >= 1 ? '#ff0000' : '#000000'}
         });
       }
 
@@ -696,22 +688,13 @@
       layout.annotations.push(
         {
           text: `${x.replace('zscore_', '')} (z-score)`,
-          xref: 'paper',
-          yref: 'paper',
-          x: 0.5,
-          y: -0.08,
-          showarrow: false,
-          font: {size: 12}
+          xref: 'paper', yref: 'paper',
+          x: 0.5, y: -0.08, showarrow: false, font: {size: R.config.fontSize}
         },
         {
           text: `${y.replace('zscore_', '')} (z-score)`,
-          xref: 'paper',
-          yref: 'paper',
-          x: -0.05,
-          y: 0.5,
-          textangle: -90,
-          showarrow: false,
-          font: {size: 12}
+          xref: 'paper', yref: 'paper',
+          x: -0.05, y: 0.5, textangle: -90, showarrow: false, font: {size: R.config.fontSize}
         }
       );
     } else {
@@ -748,155 +731,50 @@
     return R.topHitsTable
   }
 
-  function preparePage(rows) {
-    if (!Array.isArray(rows)) throw new TypeError("data must be an array");
+  function processData() {
+    const groups = new Map();               // key -> indices[]
+    const groupSizeByKey = new Map();       // key -> count
+    const bestByKey = new Map();            // key -> { idx, score }
 
-    const keyForRow = (row) => {
-      if (Object.prototype.hasOwnProperty.call(row, 'compound') && row.compound != null && row.compound !== '') {
-        return String(row.compound);
-      }
-        return [String(row.library ?? ''), ...R.smilesColumns.map(c => String(row?.[c] ?? ''))].join('|');
-      }
-    const findColumns = (columns, prefix = '', suffix = '', case_sensitive = false) => {
-      const normPrefix = case_sensitive ? prefix : prefix.toLowerCase();
-      const normSuffix = case_sensitive ? suffix : suffix.toLowerCase();
-
-      const cs = [];
-      for (const column of columns) {
-        const normColumn = case_sensitive ? column : column.toLowerCase();
-
-        const okPrefix = prefix ? normColumn.startsWith(normPrefix) : true;
-        const okSuffix = suffix ? normColumn.endsWith(normSuffix) : true;
-
-        if (okPrefix && okSuffix) {
-          cs.push(column);
-        }
-      }
-
-      if (cs.length === 0) {
-        throw Error(`No column was found with prefix "${prefix}" and suffix "${suffix}"`);
-      }
-      return cs;
-    }
-    const columns = Object.keys(rows[0]);
-
-    R.columns = columns;
-    R.countColumns = findColumns(columns, 'count_')
-    R.scoreColumns = findColumns(columns, 'zscore_')
-    R.smilesColumns = findColumns(columns, '', '_smiles')
-    R.libraries = [...new Set((rows ?? []).map(r => r.library))];
-
-    R.rows = []
-    for (const row of rows) {
-      row.key = keyForRow(row);
-      R.rows.push(row)
-    }
-
-    populateSelector();
-  }
-
-  function processData(rows) {
-    if (!Array.isArray(rows)) throw new TypeError("data must be an array");
-
-    const findColumns = (columns, prefix = '', suffix = '', case_sensitive = false) => {
-      const normPrefix = case_sensitive ? prefix : prefix.toLowerCase();
-      const normSuffix = case_sensitive ? suffix : suffix.toLowerCase();
-
-      const cs = [];
-      for (const column of columns) {
-        const normColumn = case_sensitive ? column : column.toLowerCase();
-
-        const okPrefix = prefix ? normColumn.startsWith(normPrefix) : true;
-        const okSuffix = suffix ? normColumn.endsWith(normSuffix) : true;
-
-        if (okPrefix && okSuffix) {
-          cs.push(column);
-        }
-      }
-
-      if (cs.length === 0) {
-        throw Error(`No column was found with prefix "${prefix}" and suffix "${suffix}"`);
-      }
-      return cs;
-    }
-    const columns = Object.keys(rows[0]);
-
-    R.columns = columns;
-    R.countColumns = findColumns(columns, 'count_')
-    R.scoreColumns = findColumns(columns, 'zscore_')
-    R.smilesColumns = findColumns(columns, '', '_smiles')
-    R.libraries = [...new Set((rows ?? []).map(r => r.library))];
-
-    // Group rows by keyFields, picking the best per group, top-N per group, and listing duplicates.
-    const sortBy = [{field: R.countColumns[0], desc: true}]
-    const indexField = 'index';
-    const topN = 5;
-
-    // Group: prefer modern Array.prototype.groupToMap; fallback to reduce.
-    const groups = (data, fields) => {
-      const key = (obj) => fields.map(f => obj[f] ?? "").join('|');
-      return typeof data.groupToMap === "function" ? data.groupToMap(key) : data.reduce((m, r) => {
-          const k = key(r);
-          if (!m.has(k)) m.set(k, []);
-          m.get(k).push(r);
-          return m;
-        }, new Map());
-    }
-
-    const sort = sortBy.map(s => typeof s === "string" ? { field: s, desc: true } : { field: s.field, desc: s.desc !== false });
-
-    const isBetter = (a, b) => {
-      for (const { field, desc } of sort) {
-        const va = a[field], vb = b[field];
-        if (va === vb) continue;
-        return desc ? va > vb : va < vb;
-      }
-      // stable tiebreaker
-      const ia = a[indexField], ib = b[indexField];
-      return ia > ib;
+    const norm = v => {
+      const n = Number(v);
+      return Number.isFinite(n) ? n : -Infinity; // treat missing/NaN as worst
     };
 
-    // Convert isBetter into an Array.sort comparator (descending “better first”)
-    const cmp = (a, b) => (isBetter(a, b) ? -1 : isBetter(b, a) ? 1 : 0);
+    R.rows.forEach((row, i) => {
+      const k = String(row?.key ?? "");
+      if (!groups.has(k)) groups.set(k, []);
+      groups.get(k).push(i);
 
-    const tops = [];
-    const uniques = [];
-    const duplicates = {};
+      groupSizeByKey.set(k, (groupSizeByKey.get(k) ?? 0) + 1);
 
-    const compounds = groups(rows, ['library', ...R.smilesColumns.slice(0, -1)])
-    for (const [key, arr] of compounds) {
-      // best (top-1)
-      let best = arr[0];
-      for (let i = 1; i < arr.length; i++) if (isBetter(arr[i], best)) best = arr[i];
-      uniques.push({ ...best, copies: arr.length, key: key });
-
-      // duplicates by indexField
-      if (arr.length > 1) {
-        duplicates[key] = arr.map(r => r[indexField]);
+      const s = norm(row?.[R.x]);
+      const prev = bestByKey.get(k);
+      if (!prev || s > prev.score /* tie: keep first seen */) {
+        bestByKey.set(k, { idx: i, score: s });
       }
+    });
+
+    R.uniques = [];
+    for (const [k, info] of bestByKey.entries()) {
+      const copies = groupSizeByKey.get(k) ?? 0;
+      R.uniques.push({ ...R.rows[info.idx], copies });
     }
 
-    const libraries = groups(uniques, ['library']);
-    for (const [lib, arr] of libraries) {
-      console.log(arr, R.x)
-      const values = arr.filter(v => (v.axis === 6) && (v[R.x] >= 0.1))
-      console.log(values)
-      // const top = arr.length <= topN ? arr.filter(r => r.axis === 6) : arr.filter(r => r.axis === 6).sort(cmp).slice(0, topN);
-      const top = values.sort((a, b) => b[R.x] - a[R.x]).slice(0, topN);
-      for (let t of top) {
-        t.selected = 1
-        tops.push(t);
-      }
+    R.duplicates = Object.fromEntries(
+      [...groups.entries()]
+        .filter(([, idxs]) => idxs.length >= 2)
+        .map(([k, idxs]) => [k, idxs.slice()])
+    );
+
+    const libraries = new Map();
+    for (const obj of R.uniques) {
+      const lib = String(obj?.library ?? "");
+      if (!libraries.has(lib)) libraries.set(lib, []);
+      libraries.get(lib).push(obj);
     }
 
-    R.tops = tops;
-    R.uniques = uniques;
-    R.duplicates = duplicates;
-
-    populateSelector();
-    renderChart();
-    buildTopHitsTable();
-    bindEvents();
+    R.tops = [...libraries.values()].flatMap(arr => arr.slice().sort((a, b) => norm(b?.[R.x]) - norm(a?.[R.x])).slice(0, R.config.nTopHits));
   }
 
   function bindEvents() {
@@ -925,26 +803,27 @@
           dd.hide();
         } catch (_) { /* safe no-op if bootstrap not present */ }
 
+        processData();
         renderChart();
-        const gd = R.els.chartPanel;
-
-        const selections = R.topHitsTable.getData().filter(d => d.library === R.library);
-        const keys = selections.map(d => d.key)
-        gd.data.forEach((trace, traceID) => {
-          let indices = [];
-          for (let i=0; i < trace.customdata.length; i++) {
-            const key = trace.customdata[i]['key'];
-            if (keys.includes(key)) indices.push(i)
-          }
-          Plotly.restyle(gd,
-            { selectedpoints: [indices],
-              "selected.marker.size": 30,
-              "selected.marker.line.width": 2,
-              "selected.marker.line.color": '#000',
-              "unselected.marker.opacity": 0.4,
-            },
-            [traceID]);
-        })
+        // const gd = R.els.chartPanel;
+        //
+        // const selections = R.topHitsTable.getData().filter(d => d.library === R.library);
+        // const keys = selections.map(d => d.key)
+        // gd.data.forEach((trace, traceID) => {
+        //   let indices = [];
+        //   for (let i=0; i < trace.customdata.length; i++) {
+        //     const key = trace.customdata[i]['key'];
+        //     if (keys.includes(key)) indices.push(i)
+        //   }
+        //   Plotly.restyle(gd,
+        //     { selectedpoints: [indices],
+        //       "selected.marker.size": 30,
+        //       "selected.marker.line.width": 2,
+        //       "selected.marker.line.color": '#000',
+        //       "unselected.marker.opacity": 0.4,
+        //     },
+        //     [traceID]);
+        // })
       });
     }
     bindDropdown(R.els.xSel, R.els.btnX, 'X')
@@ -994,6 +873,42 @@
       R.topHitsTable = null;
       R.els.topHitsTable.innerHTML = '';
     });
+  }
+
+  function preparePage(rows) {
+    const findColumns = (columns, prefix = '', suffix = '', case_sensitive = false) => {
+      const normPrefix = case_sensitive ? prefix : prefix.toLowerCase();
+      const normSuffix = case_sensitive ? suffix : suffix.toLowerCase();
+
+      const cs = [];
+      for (const column of columns) {
+        const normColumn = case_sensitive ? column : column.toLowerCase();
+
+        const okPrefix = prefix ? normColumn.startsWith(normPrefix) : true;
+        const okSuffix = suffix ? normColumn.endsWith(normSuffix) : true;
+
+        if (okPrefix && okSuffix) {
+          cs.push(column);
+        }
+      }
+
+      if (cs.length === 0) {
+        throw Error(`No column was found with prefix "${prefix}" and suffix "${suffix}"`);
+      }
+      return cs;
+    }
+    const columns = Object.keys(rows[0]);
+
+    R.columns = columns;
+    R.countColumns = findColumns(columns, 'count_')
+    R.scoreColumns = findColumns(columns, 'zscore_')
+    R.smilesColumns = findColumns(columns, '', '_smiles')
+    R.libraries = [...new Set((rows ?? []).map(r => r.library))];
+    R.rows = rows.map(row => (row.key = R.utilities.keyForRow(row), row));
+    populateSelector();
+    processData();
+    renderChart();
+    bindEvents();
   }
 
   // ---------- Public API ----------
