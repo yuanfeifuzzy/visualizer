@@ -123,8 +123,10 @@
     btnSaveConfig: q('btnSaveConfig'),
     configModal  : q('configModal'),
     encodingModal: q('encodingModal'),
-    hitsModal : q('hitsModal'),
-    hitsTable : q('hitsTable'),
+    btnHitsModal    : q('btnHitsModal'),
+    hitsModal    : q('hitsModal'),
+    hitsTable    : q('hitsTable'),
+    numHits      : q('numHits'),
     topHitsModal : q('topHitsModal'),
     topHitsTable : q('topHitsTable'),
   }
@@ -506,6 +508,7 @@
       const table = new Tabulator(el, {
         data: data,
         columns: columns,
+        index: 'key',
         layout: 'fitDataFill',
         height: '100%',
         nestedFieldSeparator: "->",
@@ -513,11 +516,20 @@
       });
 
       return table;
+    };
+    const updateHitsCount = (n) => {
+      if (n > 0) {
+        R.els.btnHitsModal.classList.remove('disabled');
+        R.els.numHits.innerText = n;
+      } else {
+        R.els.btnHitsModal.classList.add('disabled');
+        R.els.numHits.innerText = '';
+      }
     }
 
     return { smilesSVG, drawSMILES, makeDraggable, assembleCompoundCard, assembleCompoundName,
              assembleKV, assembleCountScore, assembleHoverText, alignModebarWithLegend,
-             assembleColumns, stableRedraw, keyForRow, tabulize
+             assembleColumns, stableRedraw, keyForRow, tabulize, updateHitsCount
            };
   })();
 
@@ -702,7 +714,26 @@
   }
 
   function buildHitsTable() {
-    R.hitsTable = R.utilities.tabulize(R.els.hitsTable, R.hits, R.utilities.assembleColumns(), R.els.hitsModal);
+    const deleteCol = {
+      title: "", width: 46, hozAlign: "center", headerSort: false,
+      titleFormatter: () => `<i class="bi bi-trash text-danger" aria-label="Delete row"></i>`,
+      formatter: () => `<button type="button" class="btn btn-sm btn-outline-danger" 
+                          title="Delete row" data-action="del">
+                          <i class="bi bi-trash"></i>
+                        </button>`,       // or Font Awesome: <i class="fa fa-trash"></i>
+      cellClick: (e, cell) => {
+        const btn = e.target.closest('button[data-action="del"]');
+        if (!btn) return;
+        e.preventDefault(); e.stopPropagation();
+        cell.getRow().delete();
+        R.utilities.updateHitsCount(R.hitsTable.getData().length);
+        const data = cell.getRow().getData();
+        data.hits = false;
+        R.topHitsTable.updateData([data]);
+      },
+    };
+    const columns = [deleteCol, ...R.utilities.assembleColumns()]
+    R.hitsTable = R.utilities.tabulize(R.els.hitsTable, R.hits, columns, R.els.hitsModal);
   }
 
   function buildTopHitsTable() {
@@ -715,14 +746,13 @@
       tops = R.tops.map(t => (t.hits = false, t))
     }
 
-    const visibleCheck = {
+    const visibleColumn = {
       title: "",
       field: "selected",
       width: 44,
       headerSort: false,
       titleFormatter: () => `<i class="bi bi-eye" aria-label="Toggle all"></i>`,
 
-      // Render a real checkbox in each cell
       formatter: (cell) => {
         const v = cell.getValue();
         return `<input type="checkbox" aria-label="select row"${v ? " checked" : ""}>`;
@@ -752,11 +782,18 @@
         table.getRows().forEach(row => row.update({ selected: turnOn }));
       },
   };
-    const hitsYesNo = { title: "Hits", field: "hits",
-      formatter:"tickCross", formatterParams:{ allowEmpty:true, allowTruthy:true,
-        tickElement:"<i class='fa fa-check'></i>", crossElement:"<i class='fa fa-times'></i>",}};
-    const columns = [visibleCheck, hitsYesNo, ...R.utilities.assembleColumns()]
+    const hitsColumn = { title: "Hits", field: "hits", formatter:"tickCross", editor: 'tickCross',
+      accessorClipboard: v => (v ? 1 : 0), accessorDownload:  v => (v ? 1 : 0),
+      cellEdited: (cell) => {
+        const data = cell.getRow().getData();
+        const table = R.hitsTable;
+        cell.getValue() ? table.updateOrAddRow(data.key, data) : table.deleteRow(data.key);
+        R.utilities.updateHitsCount(table.getData().length);
+      }
+    }
+    const columns = [visibleColumn, hitsColumn, ...R.utilities.assembleColumns()]
     R.topHitsTable = R.utilities.tabulize(R.els.topHitsTable, tops, columns, R.els.topHitsModal);
+
     return R.topHitsTable
   }
 
@@ -803,7 +840,7 @@
       libraries.get(lib).push(obj);
     }
 
-    R.tops = [...libraries.values()].flatMap(arr => arr.slice().sort((a, b) => norm(b?.[R.x]) - norm(a?.[R.x])).slice(0, R.config.nTopHits));
+    R.tops = [...libraries.values()].flatMap(arr => arr.filter(a => a.axis === 6).sort((a, b) => norm(b?.[R.x]) - norm(a?.[R.x])).slice(0, R.config.nTopHits));
   }
 
   function bindEvents() {

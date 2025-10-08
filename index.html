@@ -44,11 +44,11 @@
     <!--Switchers-->
     <div class="col-9 col-sm-10 col-md-4 col-lg-5 d-flex justify-content-end"
          id="switchers">
-      <button type="button" class="btn btn-light position-relative py-0 px-2"
+      <button type="button" class="btn btn-light position-relative py-0 px-2 disabled" id="btnHitsModal"
               data-bs-toggle="modal" data-bs-target="#hitsModal" title="Candidate Hits">
         <i class="bi bi-bag"></i>
-        <span class="position-absolute top-0 start-100 translate-middle badge rounded-pill bg-danger text-small">
-          99
+        <span class="position-absolute top-0 start-100 translate-middle">
+          <span class="badge rounded-pill bg-danger text-small" id="numHits"></span>
           <span class="visually-hidden">Number of candidates</span>
         </span>
       </button>
@@ -134,36 +134,33 @@
 
   <!-- Hit Modal -->
   <div class="modal fade" id="hitsModal" tabindex="-1" aria-labelledby="hitModalLabel" aria-hidden="true">
-      <div class="modal-dialog modal-xl modal-dialog-centered modal-dialog-scrollable">
-        <div class="modal-content">
-          <div class="modal-header">
-            <h5 class="modal-title" id="bagModalLabel">Hits</h5>
-            <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
-          </div>
-          <div class="modal-body">
-            <div id="hitsTable"></div>
-          </div>
-          <div class="modal-footer">
-            <button class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
-          </div>
+    <div class="modal-dialog modal-xl modal-dialog-centered modal-dialog-scrollable">
+      <div class="modal-content">
+        <div class="modal-header">
+          <h5 class="modal-title" id="bagModalLabel">Candidate Hits</h5>
+          <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+        </div>
+        <div class="modal-body">
+          <div id="hitsTable"></div>
         </div>
       </div>
     </div>
+  </div>
 
   <!-- Top Hits Modal -->
   <div class="modal fade" id="topHitsModal" tabindex="-1" aria-labelledby="topHitsModalLabel" aria-hidden="true">
-      <div class="modal-dialog modal-xl modal-dialog-centered modal-dialog-scrollable">
-        <div class="modal-content">
-          <div class="modal-header">
-            <h5 class="modal-title" id="topHitsModalLabel">Top Hits</h5>
-            <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
-          </div>
-          <div class="modal-body">
-            <div id="topHitsTable"></div>
-          </div>
+    <div class="modal-dialog modal-xl modal-dialog-centered modal-dialog-scrollable">
+      <div class="modal-content">
+        <div class="modal-header">
+          <h5 class="modal-title" id="topHitsModalLabel">AI Flagged Top Hits</h5>
+          <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+        </div>
+        <div class="modal-body">
+          <div id="topHitsTable"></div>
         </div>
       </div>
     </div>
+  </div>
 
   <!-- Config Modal -->
   <div class="modal fade" id="configModal" tabindex="-1" aria-labelledby="configModalLabel" aria-hidden="true">

@@ -1,9 +1,9 @@
 /* Size cap for the modal */
-#topHitsModal .modal-dialog { max-width: 95vw; }
+#hitsModal .modal-dialog, #topHitsModal .modal-dialog { max-width: 95vw; }
 #topHitsModal .modal-content { height: 75vh; }
 
 /* Create an internal scrolling flex area */
-#topHitsModal .modal-body {
+#hitsModal .modal-body, #topHitsModal .modal-body {
     display: flex;       /* flex parent */
     overflow: hidden;    /* prevent the body itself from growing the page */
     padding: 0;          /* optional: let Tabulator own the space edge-to-edge */
