@@ -28,6 +28,8 @@
     library: null,
     hitsTable: null,
     topHitsTable: null,
+    RDKit: null,
+    RDKitPromise: null
   };
 
   const q = id => R.root.getElementById(id);
@@ -241,21 +243,32 @@
         return String(row.compound);
       }
         return [String(row.library ?? ''), ...R.smilesColumns.map(c => String(row?.[c] ?? ''))].join('|');
-    }
+    };
+    const getRDKit = () => {
+      if (R.RDKit) return Promise.resolve(R.RDKit);
+      if (!R.RDKitPromise) {
+        // initRDKitModule comes from rdkit.js (Emscripten factory)
+        R.RDKitPromise = initRDKitModule()
+          .then(mod => (R.RDKit = mod))
+          .catch(err => {
+            R.RDKitPromise = null;
+            throw err;
+          });
+      }
+      return R.RDKitPromise;
+    };
     const smilesSVG = (smi, width, height) => {
       const id = 'svg_'+Math.random().toString(36).slice(2,9);
       return `<svg id="${id}" class="smiles-svg" viewBox="0 0 ${width} ${height}" data-smiles="${smi || ''}"></svg>`;
     };
-    const drawSMILES = (el) => {
-      initRDKitModule().then((RDKit) => {
-        el.querySelectorAll('.smiles-svg').forEach((holder) => {
-          const smiles = holder.dataset.smiles.split(' ')[0];
-          if (!smiles) return
-          const vw = R.config.structure.width || 240;
-          const vh = R.config.structure.width || 100;
-
-          const mol = RDKit.get_mol(smiles);
-
+    async function drawSMILES(el) {
+      const rdk = await getRDKit();
+      const svgs = el.querySelectorAll("svg.smiles-svg:not([data-rendered='1'])");
+      for (const node of svgs) {
+        const smi = node.getAttribute("data-smiles").split(' ')[0] || "";
+        if (!smi) { node.setAttribute("data-rendered","1"); continue; }
+        try {
+          const mol = rdk.get_mol(smi);
           const details = {
             // thickness and size controls:
             bondLineWidth: 1.25,      // stroke thickness (user units)
@@ -268,20 +281,15 @@
             addStereoAnnotation: false,
             legend: ""
           };
-
-          const svgStr = mol.get_svg_with_highlights(JSON.stringify(details));
+          const svgText = mol.get_svg_with_highlights(JSON.stringify(details));
           mol.delete();
-
-          // Replace placeholder with RDKit’s SVG and enforce desired display size
-          const svg = new DOMParser().parseFromString(svgStr, 'image/svg+xml').documentElement;
-          if (holder.id) svg.id = holder.id;
-          svg.setAttribute('class', (holder.getAttribute('class') || '') + ' rdkit-svg');
-          svg.setAttribute('width', vw);
-          svg.setAttribute('height', vh);
-          holder.replaceWith(svg);
-        });
-      });
-      };
+          node.outerHTML = svgText.replace("<svg ", '<svg data-rendered="1" class="smiles-svg" ');
+        } catch (e) {
+          node.setAttribute("data-rendered","1");
+          console.warn("SMILES render error:", smi, e);
+        }
+      }
+    };
     const makeDraggable = (el, handle) => {
       let startX, startY, startLeft, startTop;
 
