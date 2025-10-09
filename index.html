@@ -49,10 +49,10 @@
         <i class="bi bi-bag"></i>
         <span class="position-absolute top-0 start-100 translate-middle">
           <span class="badge rounded-pill bg-danger text-small" id="numHits"></span>
-          <span class="visually-hidden">Number of candidates</span>
+          <span class="visually-hidden">Number of candidate hits</span>
         </span>
       </button>
-      <button type="button" class="btn btn-light py-0 ms-5" title="Set equal axes (1:1)">
+      <button type="button" class="btn btn-light py-0 ms-5" title="Set equal axes (1:1)" id="btnEqualAxis">
         <i class="bi bi-graph-up"></i>
       </button>
       <button type="button" class="btn btn-light py-0 ms-2" title="Top Hits"
@@ -110,7 +110,7 @@
   </div>
 
   <!--Chart panel-->
-  <div class="border border-secondary" style="height: calc(100vh - 65px)">
+  <div style="height: calc(100vh - 65px)">
     <div id="chartPanel" class="w-100 h-100"></div>
   </div>
 

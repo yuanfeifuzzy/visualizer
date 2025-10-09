@@ -129,6 +129,7 @@
     numHits      : q('numHits'),
     topHitsModal : q('topHitsModal'),
     topHitsTable : q('topHitsTable'),
+    btnEqualAxis : q('btnEqualAxis')
   }
 
   R.io = (() => {
@@ -567,6 +568,47 @@
     buildOptions(R.els.ySel, scoreColumns, 'Y', y, R.els.btnY)
     buildOptions(R.els.librarySel, ['All', ...R.libraries], 'Library', 'All', R.els.btnLibrary)
     R.els.selectors.classList.remove('d-none')
+    R.els.btnEqualAxis.classList.add('disabled');
+  }
+
+  function squareChartWithDiagonal() {
+    const gd = R.els.chartPanel;
+    // 1) Collect x/y from current traces
+    const xs = [];
+    const ys = [];
+    (gd.data || []).forEach((t, i) => {
+      if (t.visible === 'legendonly') return;
+      if (!t.x || !t.y) return;
+      const xarr = (Array.isArray(t.x) ? t.x : [t.x]).map(Number).filter(Number.isFinite);
+      const yarr = (Array.isArray(t.y) ? t.y : [t.y]).map(Number).filter(Number.isFinite);
+      xs.push(...xarr);
+      ys.push(...yarr);
+    });
+
+    if (!xs.length || !ys.length) return; // nothing to do
+
+    // 2) Common [lo, hi] + padding
+    let lo = Math.min(Math.min(...xs), Math.min(...ys));
+    let hi = Math.max(Math.max(...xs), Math.max(...ys));
+    const span = Math.max(hi - lo, 1);         // avoid zero span
+    const pad = span * 0.01;
+    lo -= pad;
+    hi += pad;
+
+    // 3) Prepare/merge shapes: keep others, replace our "diagonal" if present
+    const current = (gd.layout && gd.layout.shapes) ? gd.layout.shapes.slice() : [];
+    const others = current.filter(s => s._tag !== 'diag_y_eq_x'); // custom tag to find ours
+    const diagonal = {type: 'line', xref: 'x', yref: 'y', x0: lo, y0: lo, x1: hi, y1: hi,
+      line: { dash: 'dot', width: 1, color: '#d7d7d7' }, layer: 'above',
+      _tag: 'diag_y_eq_x' // harmless custom key to identify later
+    };
+
+    // 4) Apply ranges + shapes
+    Plotly.relayout(gd, {
+      'xaxis.range': [lo, hi],
+      'yaxis.range': [lo, hi],
+      shapes: [...others, diagonal]
+    });
   }
 
   function renderChart() {
@@ -702,8 +744,9 @@
       traces.push(makeTrace('Mono-sython', rows.filter(r => ([0, 1, 2].includes(r.axis)))))
       traces.push(makeTrace('Di-sython', rows.filter(r => ([3, 4, 5].includes(r.axis)))))
       traces.push(makeTrace('Tri-sython', rows.filter(r => (r.axis === 6))))
-      layout.xaxis = {title: {text: `${x.replace('zscore_', '')} (z-score)`}, zeroline: true, showgrid: false};
-      layout.yaxis = {title: {text: `${y.replace('zscore_', '')} (z-score)`}, zeroline: true, showgrid: false};
+      const axisDefault = {zeroline: false, showgrid: false, mirror: true, linecolor: '#939393', linewidth: 1, nticks: 5}
+      layout.xaxis = {title: {text: `${x.replace('zscore_', '')} (z-score)`}, ...axisDefault};
+      layout.yaxis = {title: {text: `${y.replace('zscore_', '')} (z-score)`}, ...axisDefault};
     }
 
     const plotter = (global.Plotly && (global.Plotly.react || global.Plotly.newPlot || global.Plotly.plot));
@@ -870,6 +913,8 @@
 
         processData();
         renderChart();
+
+        R.library === 'All' ? R.els.btnEqualAxis.classList.add('disabled') : R.els.btnEqualAxis.classList.remove('disabled');
         // const gd = R.els.chartPanel;
         //
         // const selections = R.topHitsTable.getData().filter(d => d.library === R.library);
@@ -928,6 +973,10 @@
       })
     }
     plotlyBind();
+
+    R.els.btnEqualAxis.addEventListener('click', () => {
+      squareChartWithDiagonal();
+    })
   }
 
   function preparePage(rows) {
