@@ -642,8 +642,7 @@
 
       config.staticPlot = true;
       layout.margin.l = 90;
-      layout.margin.t = 20;
-      layout.grid = {rows, columns: columns, pattern: 'independent', xgap: 0.1, ygap: 0.2, roworder: 'top to bottom'};
+      layout.grid = {rows, columns: columns, pattern: 'independent', xgap: 0.03, ygap: 0.05, roworder: 'top to bottom'};
       layout.annotations = [];
 
       for (let i = 0; i < n; i++) {
@@ -680,7 +679,7 @@
         // Add in-panel title: top-left of the facet
         layout.annotations.push({
           text: String(library), xref: `${trace.xaxis} domain`, yref: `${trace.yaxis} domain`,
-          x: 0.5, y: 0.89, xanchor: 'center', yanchor: 'bottom', showarrow: false, bordercolor: '#fff',
+          x: 0.5, y: 0.9, xanchor: 'center', yanchor: 'bottom', showarrow: false, bordercolor: '#fff',
           font: {size: R.config.fontSize, family: R.config.fontFamily, color: maximum >= 1 ? '#ff0000' : '#000000'}
         });
       }
