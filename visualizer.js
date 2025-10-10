@@ -260,9 +260,10 @@
       }
       return R.RDKitPromise;
     };
-    const smilesSVG = (smi, width, height) => {
+    const smilesSVG = (smi) => {
       const id = 'svg_'+Math.random().toString(36).slice(2,9);
-      return `<svg id="${id}" class="smiles-svg" viewBox="0 0 ${width} ${height}" data-smiles="${smi || ''}"></svg>`;
+      return `<svg id="${id}" class="smiles-svg" data-smiles="${smi || ''}" 
+              viewBox="0 0 ${R.config.structure.width || 240} ${R.config.structure.height || 100}"></svg>`;
     };
     async function drawSMILES(el) {
       const rdk = await getRDKit();
@@ -273,8 +274,10 @@
         try {
           const mol = rdk.get_mol(smi);
           const details = {
+            width: R.config.structure.width,
+            height: R.config.structure.height,
             // thickness and size controls:
-            bondLineWidth: 1.25,      // stroke thickness (user units)
+            bondLineWidth: 1,      // stroke thickness (user units)
             fixedBondLength: 30,     // base bond length; larger -> bigger drawing
             scaleBondWidth: false,   // keep line thickness constant when scaling
 
@@ -286,7 +289,10 @@
           };
           const svgText = mol.get_svg_with_highlights(JSON.stringify(details));
           mol.delete();
-          node.outerHTML = svgText.replace("<svg ", '<svg data-rendered="1" class="smiles-svg" ');
+          const w = details['width'];
+          const h = details['height']
+          node.outerHTML = svgText.replace(/<svg\b/,
+            `<svg data-rendered="1" class="smiles-svg" width="${w}" height="${h}" viewBox="0 0 ${w} ${h}"`);
         } catch (e) {
           node.setAttribute("data-rendered","1");
           console.warn("SMILES render error:", smi, e);
@@ -327,10 +333,7 @@
       el.style.touchAction = 'none';
     };
     const assembleCompoundCard = (text, smiles) => {
-      let smilesWidth = R.config.structure.width;
-      let smilesHeight = R.config.structure.height;
-      let cardWidth = smilesWidth + 10;
-
+      const cardWidth = R.config.structure.width + 10;
       const parts = text.split('<br>');
       const trs = [];
 
@@ -338,7 +341,7 @@
       title = title.replace(' [', '<button type="button" class="btn btn-outline-success rounded-pill btn-sm py-0 copies">').replace(']', '</button>')
 
       Object.values(smiles).forEach(value => {
-        trs.push(`<tr><td colspan="2">${smilesSVG(value, smilesWidth, smilesHeight)}</td></tr>`);
+        trs.push(`<tr><td colspan="2">${smilesSVG(value)}</td></tr>`);
       })
       for (let i=1; i < parts.length; i++) {
         let [k, v] = parts[i].split(': ');
@@ -426,6 +429,8 @@
         }
       }
 
+      drawSMILES(card);
+
       return card
     };
     const assembleCompoundName = (row, addCopyNumber=false, addButton=false) => {
@@ -449,7 +454,7 @@
       text.push(assembleKV(`<b>${y.replace('zscore_', '')} (y)`, `${row[y.replace('zscore_', 'count_')]} (${row[y].toFixed(2)})</b>`, tabulate));
       const scores = R.scoreColumns.filter(c => (c !== x && c !== y));
       for (const c of scores) text.push(assembleKV(`${c.replace('zscore_', '')}`, `${row[c.replace('zscore_', 'count_')]} (${row[c].toFixed(2)})`, tabulate));
-      if (row.history_hits) text.push(assembleKV('HH', `${(row.history_hits.match(/,/g) || []).length}`, tabulate));
+      if (row.history_hits) text.push(assembleKV('HH', `${(row.history_hits.match(/,/g) || []).length+1}`, tabulate));
       return text
     };
     const assembleHoverText = (row, x, y) => {
@@ -475,7 +480,7 @@
           field: c,
           width: R.config.structure.width,
           formatter: (cell) => {
-            const html = R.utilities.smilesSVG(cell.getValue(), R.config.structure.width, R.config.structure.height);
+            const html = R.utilities.smilesSVG(cell.getValue());
             requestAnimationFrame(() => R.utilities.drawSMILES(cell.getElement()));
             return html
           }
@@ -627,7 +632,7 @@
     const makeTrace = (name, rows, size=20) => {
       if (!Array.isArray(rows) || rows.length === 0) return null;
       const data = {
-        name,
+        name: name,
         type: 'scattergl',
         mode: 'markers',
         marker: { color: rows.map(r => colorForAxis(r?.axis ?? 0)), size: size},
@@ -885,6 +890,33 @@
     R.tops = [...libraries.values()].flatMap(arr => arr.filter(a => a.axis === 6).sort((a, b) => norm(b?.[R.x]) - norm(a?.[R.x])).slice(0, R.config.nTopHits));
   }
 
+  function showTopHitsCards() {
+    const library = R.library
+    const rows = t => (Array.isArray(t?.getData?.()) ? t.getData() : []);
+    const byLib = r => r.library === library;
+    const hits = [...rows(R.hitsTable).filter(byLib), ...rows(R.topHitsTable).filter(byLib)];
+    const uniques = [...new Map(hits.map(r => [r.key, r])).values()];
+    const keys = [];
+    for (const row of uniques) {
+      const text = R.utilities.assembleHoverText(row, R.x, R.y);
+      // TODO: need to get SMILES with the right way
+      const smiles = {SMILES: row.SMILES, c1_smiles: row.c1_smiles, c2_smiles: row.c2_smiles, c3_smiles: row.c3_smiles};
+      R.utilities.assembleCompoundCard(text, smiles);
+      keys.push(row.key);
+    }
+
+    const style = {"selected.marker.size": 30, "selected.marker.line.width": 2,
+          "selected.marker.line.color": '#000', "unselected.marker.opacity": 0.4,}
+    R.els.chartPanel.data.forEach((trace, traceID) => {
+      let indices = [];
+      for (let i=0; i < trace.customdata.length; i++) {
+        const key = trace.customdata[i]['key'];
+        if (keys.includes(key)) indices.push(i)
+      }
+      if (indices.length > 0) Plotly.restyle(R.els.chartPanel, { selectedpoints: [indices], ...style}, [traceID]); }
+    )
+  }
+
   function bindEvents() {
     if (R.bound) return;
     R.els.dz = Dropzone.forElement("#dropzone");
@@ -914,7 +946,12 @@
         processData();
         renderChart();
 
-        R.library === 'All' ? R.els.btnEqualAxis.classList.add('disabled') : R.els.btnEqualAxis.classList.remove('disabled');
+        if (R.library === 'All') {
+          R.els.btnEqualAxis.classList.add('disabled');
+        } else {
+          R.els.btnEqualAxis.classList.remove('disabled');
+          showTopHitsCards();
+        }
         // const gd = R.els.chartPanel;
         //
         // const selections = R.topHitsTable.getData().filter(d => d.library === R.library);
