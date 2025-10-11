@@ -30,7 +30,6 @@
     topHitsTable: null,
     RDKit: null,
     RDKitPromise: null,
-    cards: new Set(),
   };
 
   const q = id => R.root.getElementById(id);
@@ -334,9 +333,22 @@
       handle.style.cursor = 'grab';
       el.style.touchAction = 'none';
     };
-    function getOverlay() {
+    function updateConnector(card) {
+      const c = card._connector;
+      if (!c) return;
+      const rect = card.getBoundingClientRect();
+      const toX = rect.left + rect.width / 2;
+      const toY = rect.bottom;
+      c.line.setAttribute('x1', String(c.clientX));
+      c.line.setAttribute('y1', String(c.clientY));
+      c.line.setAttribute('x2', String(toX));
+      c.line.setAttribute('y2', String(toY));
+    }
+    function attachConnector(card) {
       let ov = document.getElementById('plot-overlay');
-      if (!ov) {
+      if (ov) {
+        ov.innerHTML = '';
+      } else {
         ov = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
         ov.id = 'plot-overlay';
         Object.assign(ov.style, {
@@ -345,47 +357,42 @@
         });
         document.body.appendChild(ov);
       }
-      return ov;
-    }
-    const getTraceID = (row) => {
-      if ([0, 1, 2].includes(row.axis)) {
-        return  'Mono-sython';
-      } else {
-        if ([3, 4, 5].includes(row.axis)) {
-          return  'Di-sython';
-        } else {
-          return 'Tri-sython';
-        }
-      }
-    };
-    function attachConnector(card, fromX, fromY) {
-      const ov = getOverlay();
-      // create a line per card
       const line = document.createElementNS('http://www.w3.org/2000/svg', 'line');
       line.setAttribute('stroke', '#afafaf');
       line.setAttribute('stroke-width', '1');
       line.setAttribute('stroke-linecap', 'round');
       ov.appendChild(line);
 
-      // store references on the card
-      card._connector = { line, fromX, fromY };
+      const id = card.getAttribute('id')
+      const gd = R.els.chartPanel;
+      const data = gd._fullData || gd.data || [];
+      const rect = gd.getBoundingClientRect();
+      let clientX = null;
+      let clientY = null;
 
-      // initial position
+      for (let i = 0; i < data.length; i++) {
+        const tr = data[i];
+        const ids = tr?.ids;
+        if (!ids) continue;
+
+        const j = ids.indexOf(id);
+        if (j < 0) continue;
+
+        const x = Array.isArray(tr.x) ? tr.x[j] : tr.x;
+        const y = Array.isArray(tr.y) ? tr.y[j] : tr.y;
+
+        const xa = gd._fullLayout[(tr.xaxis || 'x') + 'axis'];
+        const ya = gd._fullLayout[(tr.yaxis || 'y') + 'axis'];
+
+        const xPx = xa._offset + xa.l2p(xa.d2l(x));
+        const yPx = ya._offset + ya.l2p(ya.d2l(y));
+
+        clientX = rect.left + xPx;
+        clientY = rect.top + yPx;
+      }
+      card._connector = { line, clientX, clientY };
       updateConnector(card);
-
-      // keep it in sync while dragging
       card.addEventListener('dragmove', () => updateConnector(card));
-    }
-    function updateConnector(card) {
-      const c = card._connector;
-      if (!c) return;
-      const rect = card.getBoundingClientRect();
-      const toX = rect.left + rect.width / 2;
-      const toY = rect.bottom;
-      c.line.setAttribute('x1', String(c.fromX));
-      c.line.setAttribute('y1', String(c.fromY));
-      c.line.setAttribute('x2', String(toX));
-      c.line.setAttribute('y2', String(toY));
     }
     function removeConnector(card) {
       if (card?._connector?.line) {
@@ -393,41 +400,81 @@
         card._connector = null;
       }
     }
-    function getVisibleHits() {
-      const library = R.library
-      const topHits = R.topHitsTable.getData().filter(r => r.library === library && r.visible)
-      const rows = t => (Array.isArray(t?.getData?.()) ? t.getData() : []);
-      const byLibrary = r => r.library === library;
-      const hits = [...rows(R.hitsTable).filter(byLibrary), ...rows(R.topHitsTable).filter(byLibrary)];
-      return [...new Map(hits.map(r => [r.key, r])).values()];
-    }
-    function highlightCompounds(rows) {
-      const keys = [];
-      for (const row of rows) {
-        const key = row.key;
-        if (!R.cards.has(key)) {
-          keys.push(key);
-          R.cards[key] = R.utilities.assembleCompoundCard(row);
+    function removeCards(ids=null, cards=null) {
+      let cs;
+      if (ids) {
+        cs = ids.map(id => q(id));
+      } else {
+        if (cards) {
+          cs = cards
+        } else {
+          cs = document.querySelectorAll('.card');
         }
       }
-      if (keys) {
-        const style = {"selected.marker.size": 30, "selected.marker.line.width": 2,
-            "selected.marker.line.color": '#000', "unselected.marker.opacity": 0.4,}
-        R.els.chartPanel.data.forEach((trace, traceID) => {
-          let indices = [];
-          for (let i=0; i < trace.customdata.length; i++) {
-            const key = trace.customdata[i]['key'];
-            if (keys.includes(key)) {
-              indices.push(i);
-            }
+      cs.forEach(card => {
+        removeConnector(card);
+        card.remove();
+      })
+
+    }
+    function getVisibleHits() {
+      const rows = t => (Array.isArray(t?.getData?.()) ? t.getData() : []);
+      return [...rows(R.hitsTable).filter(r => r.library === R.library),
+              ...rows(R.topHitsTable).filter(r => (r.library === R.library) && (r.visible))];
+    }
+    function viewCompounds(ids=null) {
+      let visibles = new Set(getVisibleHits().map(r => r.key));
+      if (ids) visibles = visibles.union(new Set(ids));
+      for (const row of R.uniques) {
+        if (visibles.has(row.key)) {
+          assembleCompoundCard(row);
+          row.visible = true;
+          R.topHitsTable.updateOrAddRow(row.key, row);
+        }
+      }
+      restylePoints(null, visibles);
+    }
+    function hideCompounds(ids=null) {
+      ids = ids || [...document.querySelectorAll('.card')].map(el => el.id) || [];
+      removeCards(ids);
+      R.topHitsTable.deleteRow(ids);
+      restylePoints(null, ids, 'remove');
+    }
+    function restylePoints(rows=null, ids=null, mode='add') {
+      const uids = ids || rows?.map(row => row.key);
+      if (uids) {
+        const want = new Set(uids);
+        const data = R.els.chartPanel.data;
+        for (let i = 0; i < data.length; i++) {
+          const tr = data[i];
+          const ids = tr?.ids;
+          if (!ids) continue;
+
+          const matches = [];
+          for (let j = 0; j < ids.length; j++) if (want.has(ids[j])) matches.push(j);
+          let selected = Array.isArray(tr.selectedpoints) ? tr.selectedpoints.slice() : [];
+
+          if (mode === 'add') {
+            selected = Array.from(new Set(selected.concat(matches)));
+          } else if (mode === 'remove') {
+            const rm = new Set(matches);
+            selected = selected.filter(j => !rm.has(j));
+          } else { // 'replace'
+            selected = matches;
           }
-          if (indices.length > 0) Plotly.restyle(R.els.chartPanel, { selectedpoints: [indices], ...style}, [traceID]); }
-        )
+
+          const update = {
+            selectedpoints: [selected],
+            "selected.marker.size": 30,
+            "selected.marker.line.width": 2,
+            "selected.marker.line.color": '#000',
+            "unselected.marker.opacity": 0.4
+          };
+          Plotly.restyle(R.els.chartPanel, update, [i]);
+        }
       }
     }
     const assembleCompoundCard = (row) => {
-      const uid = `$card-{row.key}`;
-      if (R.cards.has(uid)) return ;
       const smiles = getSMILES(row);
       const trs = smiles.map(s => `<tr><td colspan="2">${smilesSVG(s)}</td></tr>`);
 
@@ -444,11 +491,11 @@
 
       const card = document.createElement('div');
       const width = R.config.structure.width + 10;
-      card.setAttribute('id', uid)
+      card.setAttribute('id', row.key)
       card.className = 'card';
       card.style.position = 'fixed';
       card.style.width = `$ width}px`;
-      card.style.zIndex = `${1050 + R.cards.size}`;
+      card.style.zIndex = '1050';
       card.style.pointerEvents = 'auto';
 
       const header = document.createElement('div');
@@ -476,7 +523,8 @@
       card.style.display = 'block';
 
       document.body.appendChild(card);
-      R.utilities.makeDraggable(card, header);
+      makeDraggable(card, header);
+      attachConnector(card)
 
       card.addEventListener('click', (e) => {
         const btn = e.target.closest('button.copies');
@@ -495,13 +543,11 @@
       function handleFooterAction(action, ctx) {
         switch (action) {
           case 'bag':
-            console.log('bag clicked');
             break;
           case 'copy': {
             // Example: copy first SMILES in this card (adjust selector as needed)
             const smiles = ctx.card.querySelector('.smiles-svg')?.dataset.smiles || '';
             if (smiles) navigator.clipboard?.writeText(smiles).catch(console.warn);
-            console.log('copied', smiles);
             break;
           }
           case 'email':
@@ -511,8 +557,9 @@
             window.location.href = `mailto:?subject=${subject}&body=${body}`;
             break;
           case 'close':
-            // removeConnector(card)
-            ctx.card.remove();
+            // removeCards(null, [ctx.card]);
+            // ctx.card.remove();
+            hideCompounds([ctx.card.getAttribute('id')])
             break;
         }
       }
@@ -623,7 +670,8 @@
 
     return { smilesSVG, drawSMILES, makeDraggable, assembleCompoundCard, assembleCompoundName,
              assembleKV, assembleCountScore, assembleHoverText, alignModebarWithLegend,
-             assembleColumns, stableRedraw, keyForRow, tabulize, updateHitsCount, highlightCompounds,
+             assembleColumns, stableRedraw, keyForRow, tabulize, updateHitsCount,
+             removeCards, viewCompounds, hideCompounds
            };
   })();
 
@@ -719,7 +767,8 @@
     };
     const makeTrace = (name, rows, size=20) => {
       if (!Array.isArray(rows) || rows.length === 0) return null;
-      const data = {
+      return {
+        ids: name.includes('sython') ? rows.map(r => r.key) : [],
         name: name,
         type: 'scattergl',
         mode: 'markers',
@@ -735,7 +784,6 @@
         hovertemplate: `%{text}<extra></extra>`,
         showlegend: name.includes('sython')
       };
-      return data
     };
 
     let layout = {
@@ -875,8 +923,6 @@
     const hits = R.hitsTable?.getData?.() ?? [];
     const keys = hits.map(hit => hit.key);
     const tops = Object.values(R.tops).flat().map(top => ({...top, hits: keys.includes(top.key)}));
-    console.log(tops)
-
     const visibleColumn = {
       title: "",
       field: "visible",
@@ -972,15 +1018,6 @@
     }
   }
 
-  function showTopHitsCards() {
-    const library = R.library
-    const rows = t => (Array.isArray(t?.getData?.()) ? t.getData() : []);
-    const byLib = r => r.library === library;
-    const hits = [...rows(R.hitsTable).filter(byLib), ...rows(R.topHitsTable).filter(byLib)];
-    const uniques = [...new Map(hits.map(r => [r.key, r])).values()];
-    R.utilities.highlightCompounds(uniques)
-  }
-
   function bindEvents() {
     if (R.bound) return;
     R.els.dz = Dropzone.forElement("#dropzone");
@@ -1014,27 +1051,9 @@
           R.els.btnEqualAxis.classList.add('disabled');
         } else {
           R.els.btnEqualAxis.classList.remove('disabled');
-          showTopHitsCards();
+          R.utilities.hideCompounds();
+          R.utilities.viewCompounds();
         }
-        // const gd = R.els.chartPanel;
-        //
-        // const selections = R.topHitsTable.getData().filter(d => d.library === R.library);
-        // const keys = selections.map(d => d.key)
-        // gd.data.forEach((trace, traceID) => {
-        //   let indices = [];
-        //   for (let i=0; i < trace.customdata.length; i++) {
-        //     const key = trace.customdata[i]['key'];
-        //     if (keys.includes(key)) indices.push(i)
-        //   }
-        //   Plotly.restyle(gd,
-        //     { selectedpoints: [indices],
-        //       "selected.marker.size": 30,
-        //       "selected.marker.line.width": 2,
-        //       "selected.marker.line.color": '#000',
-        //       "unselected.marker.opacity": 0.4,
-        //     },
-        //     [traceID]);
-        // })
       });
     }
     bindDropdown(R.els.xSel, R.els.btnX, 'X')
@@ -1059,21 +1078,10 @@
       window.addEventListener('resize', () => R.utilities.alignModebarWithLegend(holder));
 
       if (holder.removeAllListeners) holder.removeAllListeners('plotly_click');
-
-      holder.on('plotly_click', function (data) {
-        const pt = data.points && data.points[0];
-        const text = pt.text ?? '';
-        if (!pt) return;
-
-        // const smiles = pt.data.customdata[pt.pointNumber];
-        // const card = R.utilities.assembleCompoundCard(text, smiles);
-        const rows = R.uniques.filter(r => r.key === pt.data.customdata[pt.pointNumber]['key'])
-        const card = R.utilities.assembleCompoundCard(rows[0]);
-
-        // R.utilities.drawSMILES(card);
-        // attachConnector(card, data.event.clientX, data.event.clientY);
-        // selectPoint(holder, pt.curveNumber, pt.pointNumber, {base: 15, big: 30, multi: true});
-      })
+      holder.on('plotly_click', (data) => {
+        const id = data.points[0].id;
+        q(id) ? R.utilities.hideCompounds([id]) : R.utilities.viewCompounds([id])
+      });
     }
     plotlyBind();
 
