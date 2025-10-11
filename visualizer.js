@@ -29,7 +29,8 @@
     hitsTable: null,
     topHitsTable: null,
     RDKit: null,
-    RDKitPromise: null
+    RDKitPromise: null,
+    cards: new Set(),
   };
 
   const q = id => R.root.getElementById(id);
@@ -41,10 +42,10 @@
       fontSizeCC: Number(q('fontSizeCC')?.value || 10),
 
       render: {
+        SMILES: !!q('renderSmiles')?.checked,
         c1_smiles: !!q('renderBB1')?.checked,
         c2_smiles: !!q('renderBB2')?.checked,
         c3_smiles: !!q('renderBB3')?.checked,
-        SMILES: !!q('renderSmiles')?.checked,
       },
 
       structure: {
@@ -76,9 +77,9 @@
 
     // Rendering toggles
     if (cfg.render) {
-      setChk('renderBB1',  !!cfg.render.BB1);
-      setChk('renderBB2',  !!cfg.render.BB2);
-      setChk('renderBB3',  !!cfg.render.BB3);
+      setChk('renderBB1',  !!cfg.render.c1_smiles);
+      setChk('renderBB2',  !!cfg.render.c2_smiles);
+      setChk('renderBB3',  !!cfg.render.c3_smiles);
       setChk('renderSmiles', !!cfg.render.SMILES);
     }
 
@@ -260,6 +261,7 @@
       }
       return R.RDKitPromise;
     };
+    const getSMILES = (row) => { return Object.entries(R.config.render).map((k, v) => v ? row?.[k] : ''); }
     const smilesSVG = (smi) => {
       const id = 'svg_'+Math.random().toString(36).slice(2,9);
       return `<svg id="${id}" class="smiles-svg" data-smiles="${smi || ''}" 
@@ -298,7 +300,7 @@
           console.warn("SMILES render error:", smi, e);
         }
       }
-    };
+    }
     const makeDraggable = (el, handle) => {
       let startX, startY, startLeft, startTop;
 
@@ -332,54 +334,149 @@
       handle.style.cursor = 'grab';
       el.style.touchAction = 'none';
     };
-    const assembleCompoundCard = (text, smiles) => {
-      const cardWidth = R.config.structure.width + 10;
+    function getOverlay() {
+      let ov = document.getElementById('plot-overlay');
+      if (!ov) {
+        ov = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+        ov.id = 'plot-overlay';
+        Object.assign(ov.style, {
+          position: 'fixed', left: 0, top: 0, width: '100vw', height: '100vh',
+          pointerEvents: 'none', zIndex: 1049
+        });
+        document.body.appendChild(ov);
+      }
+      return ov;
+    }
+    const getTraceID = (row) => {
+      if ([0, 1, 2].includes(row.axis)) {
+        return  'Mono-sython';
+      } else {
+        if ([3, 4, 5].includes(row.axis)) {
+          return  'Di-sython';
+        } else {
+          return 'Tri-sython';
+        }
+      }
+    };
+    function attachConnector(card, fromX, fromY) {
+      const ov = getOverlay();
+      // create a line per card
+      const line = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+      line.setAttribute('stroke', '#afafaf');
+      line.setAttribute('stroke-width', '1');
+      line.setAttribute('stroke-linecap', 'round');
+      ov.appendChild(line);
+
+      // store references on the card
+      card._connector = { line, fromX, fromY };
+
+      // initial position
+      updateConnector(card);
+
+      // keep it in sync while dragging
+      card.addEventListener('dragmove', () => updateConnector(card));
+    }
+    function updateConnector(card) {
+      const c = card._connector;
+      if (!c) return;
+      const rect = card.getBoundingClientRect();
+      const toX = rect.left + rect.width / 2;
+      const toY = rect.bottom;
+      c.line.setAttribute('x1', String(c.fromX));
+      c.line.setAttribute('y1', String(c.fromY));
+      c.line.setAttribute('x2', String(toX));
+      c.line.setAttribute('y2', String(toY));
+    }
+    function removeConnector(card) {
+      if (card?._connector?.line) {
+        card._connector.line.remove();
+        card._connector = null;
+      }
+    }
+    function getVisibleHits() {
+      const library = R.library
+      const topHits = R.topHitsTable.getData().filter(r => r.library === library && r.visible)
+      const rows = t => (Array.isArray(t?.getData?.()) ? t.getData() : []);
+      const byLibrary = r => r.library === library;
+      const hits = [...rows(R.hitsTable).filter(byLibrary), ...rows(R.topHitsTable).filter(byLibrary)];
+      return [...new Map(hits.map(r => [r.key, r])).values()];
+    }
+    function highlightCompounds(rows) {
+      const keys = [];
+      for (const row of rows) {
+        const key = row.key;
+        if (!R.cards.has(key)) {
+          keys.push(key);
+          R.cards[key] = R.utilities.assembleCompoundCard(row);
+        }
+      }
+      if (keys) {
+        const style = {"selected.marker.size": 30, "selected.marker.line.width": 2,
+            "selected.marker.line.color": '#000', "unselected.marker.opacity": 0.4,}
+        R.els.chartPanel.data.forEach((trace, traceID) => {
+          let indices = [];
+          for (let i=0; i < trace.customdata.length; i++) {
+            const key = trace.customdata[i]['key'];
+            if (keys.includes(key)) {
+              indices.push(i);
+            }
+          }
+          if (indices.length > 0) Plotly.restyle(R.els.chartPanel, { selectedpoints: [indices], ...style}, [traceID]); }
+        )
+      }
+    }
+    const assembleCompoundCard = (row) => {
+      const uid = `$card-{row.key}`;
+      if (R.cards.has(uid)) return ;
+      const smiles = getSMILES(row);
+      const trs = smiles.map(s => `<tr><td colspan="2">${smilesSVG(s)}</td></tr>`);
+
+      const text = assembleHoverText(row);
       const parts = text.split('<br>');
-      const trs = [];
 
       let title = parts[0].replace('<b>', '<span>').replace('</b>', '</span>')
       title = title.replace(' [', '<button type="button" class="btn btn-outline-success rounded-pill btn-sm py-0 copies">').replace(']', '</button>')
 
-      Object.values(smiles).forEach(value => {
-        trs.push(`<tr><td colspan="2">${smilesSVG(value)}</td></tr>`);
-      })
       for (let i=1; i < parts.length; i++) {
         let [k, v] = parts[i].split(': ');
         trs.push(`<tr><td class="text-start">${k}</td><td class="text-end">${v}</td></tr>`);
       }
 
       const card = document.createElement('div');
+      const width = R.config.structure.width + 10;
+      card.setAttribute('id', uid)
       card.className = 'card';
       card.style.position = 'fixed';
-      card.style.width = `${cardWidth}px`;
-      card.style.zIndex = '1050';
+      card.style.width = `$ width}px`;
+      card.style.zIndex = `${1050 + R.cards.size}`;
       card.style.pointerEvents = 'auto';
 
-      const cardHead = document.createElement('div');
-      cardHead.className = 'card-header d-flex justify-content-center align-items-center fw-bold gap-2';
-      cardHead.innerHTML = title;
-      card.appendChild(cardHead);
+      const header = document.createElement('div');
+      header.className = 'card-header d-flex justify-content-center align-items-center fw-bold gap-2';
+      header.innerHTML = title;
+      card.appendChild(header);
 
-      const cardBody = document.createElement('div')
-      cardBody.innerHTML = `<table class="w-100">${trs.join('')}</table>`;
-      cardBody.style.padding = '5px';
-      card.appendChild(cardBody);
+      const body = document.createElement('div')
+      body.innerHTML = `<table class="w-100">${trs.join('')}</table>`;
+      body.style.padding = '5px';
+      card.appendChild(body);
 
-      const cardFooter = document.createElement('div');
-      cardFooter.className = 'card-footer bg-white d-flex align-items-center p-1';
-      cardFooter.innerHTML = '<i class="bi bi-bag me-3" data-action="bag" role="button" tabindex="0" title="Add to bag"></i> ' +
+      const footer = document.createElement('div');
+      footer.className = 'card-footer bg-white d-flex align-items-center p-1';
+      footer.innerHTML = '<i class="bi bi-bag me-3" data-action="bag" role="button" tabindex="0" title="Add to' +
+        ' bag"></i> ' +
         '<i class="bi bi-copy text-success me-3" data-action="copy" role="button" tabindex="0" title="Copy"></i> ' +
         '<i class="bi bi-envelope text-primary" data-action="email" role="button" tabindex="0" title="E-mail"></i> ' +
         '<i class="bi bi-x-circle ms-auto text-danger" data-action="close" role="button" tabindex="0" title="Close"></i>';
-      card.appendChild(cardFooter);
+      card.appendChild(footer);
 
       const rect = R.els.chartPanel.getBoundingClientRect();
-      card.style.left = (rect.x + rect.width / 2 - cardWidth / 2) + 'px';
+      card.style.left = (rect.x + rect.width / 2 - width / 2) + 'px';
       card.style.top = (rect.y + 50) + 'px';
       card.style.display = 'block';
 
       document.body.appendChild(card);
-      R.utilities.makeDraggable(card, cardHead);
+      R.utilities.makeDraggable(card, header);
 
       card.addEventListener('click', (e) => {
         const btn = e.target.closest('button.copies');
@@ -388,19 +485,10 @@
         window.alert('copies clicked:', key, btn.textContent.trim());
       });
 
-      // Single handler for clicks & keyboard
-      cardFooter.addEventListener('click', (e) => {
+      footer.addEventListener('click', (e) => {
         const icon = e.target.closest('[data-action]');
         if (!icon) return;
-        handleFooterAction(icon.dataset.action, { card, cardFooter });
-      });
-
-      cardFooter.addEventListener('keydown', (e) => {
-        if (e.key !== 'Enter' && e.key !== ' ') return;
-        const icon = e.target.closest('[data-action]');
-        if (!icon) return;
-        e.preventDefault(); // prevent page scroll on Space
-        handleFooterAction(icon.dataset.action, { card, cardFooter });
+        handleFooterAction(icon.dataset.action, { card, footer });
       });
 
       // Centralized actions
@@ -435,7 +523,7 @@
     };
     const assembleCompoundName = (row, addCopyNumber=false, addButton=false) => {
       let compound = row.compound ? row.compound : `VC${row.index}`;
-      if ('copies' in row && row.copies > 1 && addCopyNumber) {
+      if (row.copies > 1 && addCopyNumber) {
         if (addButton) {
           const key = `${row.library}|` + R.smilesColumns.map(s => row[s]).join('|')
           const button = ' <button type="button" class="btn btn-outline-success rounded-pill btn-sm py-0" ' +
@@ -448,18 +536,18 @@
       return compound
     };
     const assembleKV = (k, v, tabulate=false) => { return tabulate ? `<tr><td>${k}</td><td>${v}</td></tr>` : `${k}: ${v}`};
-    const assembleCountScore = (row, x, y, tabulate=false) => {
+    const assembleCountScore = (row, tabulate=false) => {
       let text = [];
-      text.push(assembleKV(`<b>${x.replace('zscore_', '')} (x)`, `${row[x.replace('zscore_', 'count_')]} (${row[x].toFixed(2)})</b>`, tabulate));
-      text.push(assembleKV(`<b>${y.replace('zscore_', '')} (y)`, `${row[y.replace('zscore_', 'count_')]} (${row[y].toFixed(2)})</b>`, tabulate));
-      const scores = R.scoreColumns.filter(c => (c !== x && c !== y));
+      text.push(assembleKV(`<b>${R.x.replace('zscore_', '')} (x)`, `${row[R.x.replace('zscore_', 'count_')]} (${row[R.x].toFixed(2)})</b>`, tabulate));
+      text.push(assembleKV(`<b>${R.y.replace('zscore_', '')} (y)`, `${row[R.y.replace('zscore_', 'count_')]} (${row[R.y].toFixed(2)})</b>`, tabulate));
+      const scores = R.scoreColumns.filter(c => (c !== R.x && c !== R.y));
       for (const c of scores) text.push(assembleKV(`${c.replace('zscore_', '')}`, `${row[c.replace('zscore_', 'count_')]} (${row[c].toFixed(2)})`, tabulate));
       if (row.history_hits) text.push(assembleKV('HH', `${(row.history_hits.match(/,/g) || []).length+1}`, tabulate));
       return text
     };
-    const assembleHoverText = (row, x, y) => {
+    const assembleHoverText = (row) => {
       let text = [`<b>${assembleCompoundName(row)}</b>`];
-      text.push(...assembleCountScore(row, x, y));
+      text.push(...assembleCountScore(row));
       return text.join('<br>')
     };
     const alignModebarWithLegend = (gd) => {
@@ -535,7 +623,7 @@
 
     return { smilesSVG, drawSMILES, makeDraggable, assembleCompoundCard, assembleCompoundName,
              assembleKV, assembleCountScore, assembleHoverText, alignModebarWithLegend,
-             assembleColumns, stableRedraw, keyForRow, tabulize, updateHitsCount
+             assembleColumns, stableRedraw, keyForRow, tabulize, updateHitsCount, highlightCompounds,
            };
   })();
 
@@ -642,7 +730,7 @@
           return {SMILES: r.SMILES ?? '', c1_smiles: r.c1_smiles ?? '', c2_smiles: r.c2_smiles ?? '',
                   c3_smiles: r.c3_smiles ?? '', key: r.key};
         }),
-        text: name.includes('sython') ? rows.map(r => R.utilities.assembleHoverText(r, x, y)) : '',
+        text: name.includes('sython') ? rows.map(r => R.utilities.assembleHoverText(r)) : '',
         hoverinfo: 'text',
         hovertemplate: `%{text}<extra></extra>`,
         showlegend: name.includes('sython')
@@ -784,25 +872,21 @@
   }
 
   function buildTopHitsTable() {
-    const hits = R.hitsTable.getData();
-    let tops = []
-    if (hits.length > 0) {
-      const keys = hits.map(h => h.key);
-      tops = R.tops.map(t => (t.hits = keys.includes(t.key), t))
-    } else {
-      tops = R.tops.map(t => (t.hits = false, t))
-    }
+    const hits = R.hitsTable?.getData?.() ?? [];
+    const keys = hits.map(hit => hit.key);
+    const tops = Object.values(R.tops).flat().map(top => ({...top, hits: keys.includes(top.key)}));
+    console.log(tops)
 
     const visibleColumn = {
       title: "",
-      field: "selected",
+      field: "visible",
       width: 44,
       headerSort: false,
       titleFormatter: () => `<i class="bi bi-eye" aria-label="Toggle all"></i>`,
 
       formatter: (cell) => {
         const v = cell.getValue();
-        return `<input type="checkbox" aria-label="select row"${v ? " checked" : ""}>`;
+        return `<input type="checkbox" aria-label="visible row"${v ? " checked" : ""}>`;
       },
 
       // Toggle the underlying data when the cell is clicked
@@ -840,8 +924,6 @@
     }
     const columns = [visibleColumn, hitsColumn, ...R.utilities.assembleColumns()]
     R.topHitsTable = R.utilities.tabulize(R.els.topHitsTable, tops, columns, R.els.topHitsModal);
-
-    return R.topHitsTable
   }
 
   function processData() {
@@ -880,14 +962,14 @@
         .map(([k, idxs]) => [k, idxs.slice()])
     );
 
-    const libraries = new Map();
-    for (const obj of R.uniques) {
-      const lib = String(obj?.library ?? "");
-      if (!libraries.has(lib)) libraries.set(lib, []);
-      libraries.get(lib).push(obj);
+    R.tops = Object.create(null);
+    for (const row of R.uniques) (R.tops[row.library] ??= []).push(row);
+    for (const [k, v] of Object.entries(R.tops)) {
+      R.tops[k] = v.filter(a => (a.axis === 6) && (norm(a?.[R.x]) >= 0.5))
+        .sort((a, b) => norm(b?.[R.x]) - norm(a?.[R.x]))
+        .slice(0, R.config.nTopHits)
+        .map(a => ({...a, visible: true}));
     }
-
-    R.tops = [...libraries.values()].flatMap(arr => arr.filter(a => a.axis === 6).sort((a, b) => norm(b?.[R.x]) - norm(a?.[R.x])).slice(0, R.config.nTopHits));
   }
 
   function showTopHitsCards() {
@@ -896,25 +978,7 @@
     const byLib = r => r.library === library;
     const hits = [...rows(R.hitsTable).filter(byLib), ...rows(R.topHitsTable).filter(byLib)];
     const uniques = [...new Map(hits.map(r => [r.key, r])).values()];
-    const keys = [];
-    for (const row of uniques) {
-      const text = R.utilities.assembleHoverText(row, R.x, R.y);
-      // TODO: need to get SMILES with the right way
-      const smiles = {SMILES: row.SMILES, c1_smiles: row.c1_smiles, c2_smiles: row.c2_smiles, c3_smiles: row.c3_smiles};
-      R.utilities.assembleCompoundCard(text, smiles);
-      keys.push(row.key);
-    }
-
-    const style = {"selected.marker.size": 30, "selected.marker.line.width": 2,
-          "selected.marker.line.color": '#000', "unselected.marker.opacity": 0.4,}
-    R.els.chartPanel.data.forEach((trace, traceID) => {
-      let indices = [];
-      for (let i=0; i < trace.customdata.length; i++) {
-        const key = trace.customdata[i]['key'];
-        if (keys.includes(key)) indices.push(i)
-      }
-      if (indices.length > 0) Plotly.restyle(R.els.chartPanel, { selectedpoints: [indices], ...style}, [traceID]); }
-    )
+    R.utilities.highlightCompounds(uniques)
   }
 
   function bindEvents() {
@@ -1001,10 +1065,12 @@
         const text = pt.text ?? '';
         if (!pt) return;
 
-        const smiles = pt.data.customdata[pt.pointNumber];
-        const card = R.utilities.assembleCompoundCard(text, smiles);
+        // const smiles = pt.data.customdata[pt.pointNumber];
+        // const card = R.utilities.assembleCompoundCard(text, smiles);
+        const rows = R.uniques.filter(r => r.key === pt.data.customdata[pt.pointNumber]['key'])
+        const card = R.utilities.assembleCompoundCard(rows[0]);
 
-        R.utilities.drawSMILES(card);
+        // R.utilities.drawSMILES(card);
         // attachConnector(card, data.event.clientX, data.event.clientY);
         // selectPoint(holder, pt.curveNumber, pt.pointNumber, {base: 15, big: 30, multi: true});
       })
