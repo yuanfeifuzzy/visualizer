@@ -343,12 +343,11 @@
       c.line.setAttribute('y1', String(c.clientY));
       c.line.setAttribute('x2', String(toX));
       c.line.setAttribute('y2', String(toY));
+      console.log(c.clientX, c.clientY, toX, toY)
     }
     function attachConnector(card) {
       let ov = document.getElementById('plot-overlay');
-      if (ov) {
-        ov.innerHTML = '';
-      } else {
+      if (!ov) {
         ov = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
         ov.id = 'plot-overlay';
         Object.assign(ov.style, {
@@ -376,19 +375,22 @@
         if (!ids) continue;
 
         const j = ids.indexOf(id);
-        if (j < 0) continue;
+        if (j >= 0) {
+          const x = tr.x[j];
+          const y = tr.y[j];
 
-        const x = Array.isArray(tr.x) ? tr.x[j] : tr.x;
-        const y = Array.isArray(tr.y) ? tr.y[j] : tr.y;
+          const xa = gd._fullLayout[(tr.xaxis || 'x') + 'axis'];
+          const ya = gd._fullLayout[(tr.yaxis || 'y') + 'axis'];
 
-        const xa = gd._fullLayout[(tr.xaxis || 'x') + 'axis'];
-        const ya = gd._fullLayout[(tr.yaxis || 'y') + 'axis'];
+          const xPx = xa._offset + xa.l2p(xa.d2l(x));
+          const yPx = ya._offset + ya.l2p(ya.d2l(y));
 
-        const xPx = xa._offset + xa.l2p(xa.d2l(x));
-        const yPx = ya._offset + ya.l2p(ya.d2l(y));
+          clientX = rect.left + xPx;
+          clientY = rect.top + yPx;
+          break
+        }
 
-        clientX = rect.left + xPx;
-        clientY = rect.top + yPx;
+
       }
       card._connector = { line, clientX, clientY };
       updateConnector(card);
@@ -435,7 +437,7 @@
       restylePoints(null, visibles);
     }
     function hideCompounds(ids=null) {
-      ids = ids || [...document.querySelectorAll('.card')].map(el => el.id) || [];
+      ids = ids || [...document.querySelectorAll('.compound-card')].map(el => el.id) || [];
       removeCards(ids);
       R.topHitsTable.deleteRow(ids);
       restylePoints(null, ids, 'remove');
@@ -492,7 +494,7 @@
       const card = document.createElement('div');
       const width = R.config.structure.width + 10;
       card.setAttribute('id', row.key)
-      card.className = 'card';
+      card.className = 'card compound-card';
       card.style.position = 'fixed';
       card.style.width = `$ width}px`;
       card.style.zIndex = '1050';
@@ -518,9 +520,24 @@
       card.appendChild(footer);
 
       const rect = R.els.chartPanel.getBoundingClientRect();
-      card.style.left = (rect.x + rect.width / 2 - width / 2) + 'px';
-      card.style.top = (rect.y + 50) + 'px';
+      const start = rect.x;
+      const stop = rect.width;
+      const x = row[R.x] * rect.width;
+      const left = x - (width / 2) -5;
+      const right = x + (width / 2) + 5;
+      if (left < start) {
+        card.style.left = (start + 5) + 'px';
+      } else {
+        if (right > stop) {
+          card.style.left = (stop - 5 - width) + 'px';
+        } else {
+          card.style.left = left + 'px';
+        }
+      }
+
+      card.style.top = (rect.y + 30) + 'px';
       card.style.display = 'block';
+      card.style.fontsize = '0.8rem';
 
       document.body.appendChild(card);
       makeDraggable(card, header);
@@ -597,12 +614,12 @@
       text.push(...assembleCountScore(row));
       return text.join('<br>')
     };
-    const alignModebarWithLegend = (gd) => {
-      const mb  = gd.querySelector('.modebar');
-      const leg = gd.querySelector('.legend');
+    const alignModebarWithLegend = () => {
+      const mb  = R.els.chartPanel.querySelector('.modebar');
+      const leg = R.els.chartPanel.querySelector('.legend');
       if (!mb || !leg) return;
 
-      const gbox = gd.getBoundingClientRect();
+      const gbox = R.els.chartPanel.getBoundingClientRect();
       const lbox = leg.getBoundingClientRect();
       const top  = Math.max(0, Math.round(lbox.top - gbox.top));
       mb.style.top = top + 'px';
@@ -671,7 +688,7 @@
     return { smilesSVG, drawSMILES, makeDraggable, assembleCompoundCard, assembleCompoundName,
              assembleKV, assembleCountScore, assembleHoverText, alignModebarWithLegend,
              assembleColumns, stableRedraw, keyForRow, tabulize, updateHitsCount,
-             removeCards, viewCompounds, hideCompounds
+             removeCards, viewCompounds, hideCompounds, updateConnector
            };
   })();
 
@@ -1019,12 +1036,10 @@
   }
 
   function bindEvents() {
-    if (R.bound) return;
     R.els.dz = Dropzone.forElement("#dropzone");
     R.els.dz.on('addedfile', (file) => { if (file) loadFile(file).catch(R.onError || console.error); });
 
     const bindDropdown = (menu, btn, label) => {
-      // Event delegation so it works even if items are added later
       menu.addEventListener('click', (e) => {
         const link = e.target.closest('a.dropdown-item');
         if (!link) return;
@@ -1072,18 +1087,27 @@
       bootstrap.Modal.getInstance(R.els.configModal)?.show();
     });
 
-    const plotlyBind = () => {
-      const holder = R.els.chartPanel;
-      holder.on('plotly_relayout', () => R.utilities.alignModebarWithLegend(holder));
-      window.addEventListener('resize', () => R.utilities.alignModebarWithLegend(holder));
-
-      if (holder.removeAllListeners) holder.removeAllListeners('plotly_click');
-      holder.on('plotly_click', (data) => {
-        const id = data.points[0].id;
-        q(id) ? R.utilities.hideCompounds([id]) : R.utilities.viewCompounds([id])
+    const updateConnections = () => {
+      document.querySelectorAll('.card').forEach(card => {
+        if (card._connector) R.utilities.updateConnector(card);
       });
     }
-    plotlyBind();
+    const holder = R.els.chartPanel;
+    R.els.chartPanel.on('plotly_relayout', () => {
+      R.utilities.alignModebarWithLegend();
+      updateConnections();
+    });
+    window.addEventListener('resize', () => {
+      R.utilities.alignModebarWithLegend();
+      updateConnections();
+    });
+
+    // if (holder.removeAllListeners) holder.removeAllListeners('plotly_click');
+    holder.on('plotly_click', (data) => {
+      const id = data.points[0].id;
+      q(id) ? R.utilities.hideCompounds([id]) : R.utilities.viewCompounds([id])
+    });
+
 
     R.els.btnEqualAxis.addEventListener('click', () => {
       squareChartWithDiagonal();
