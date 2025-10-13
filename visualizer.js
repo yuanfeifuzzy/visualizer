@@ -334,37 +334,19 @@
       el.style.touchAction = 'none';
     };
     function updateConnector(card) {
-      const c = card._connector;
-      if (!c) return;
+      const { clientX, clientY } = dataPointToClientXY(card.getAttribute('id'));
       const rect = card.getBoundingClientRect();
       const toX = rect.left + rect.width / 2;
       const toY = rect.bottom;
-      c.line.setAttribute('x1', String(c.clientX));
-      c.line.setAttribute('y1', String(c.clientY));
-      c.line.setAttribute('x2', String(toX));
-      c.line.setAttribute('y2', String(toY));
-      console.log(c.clientX, c.clientY, toX, toY)
+      card.line.setAttribute('x1', String(clientX));
+      card.line.setAttribute('y1', String(clientY));
+      card.line.setAttribute('x2', String(toX));
+      card.line.setAttribute('y2', String(toY));
     }
-    function attachConnector(card) {
-      let ov = document.getElementById('plot-overlay');
-      if (!ov) {
-        ov = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
-        ov.id = 'plot-overlay';
-        Object.assign(ov.style, {
-          position: 'fixed', left: 0, top: 0, width: '100vw', height: '100vh',
-          pointerEvents: 'none', zIndex: 1049
-        });
-        document.body.appendChild(ov);
-      }
-      const line = document.createElementNS('http://www.w3.org/2000/svg', 'line');
-      line.setAttribute('stroke', '#afafaf');
-      line.setAttribute('stroke-width', '1');
-      line.setAttribute('stroke-linecap', 'round');
-      ov.appendChild(line);
-
-      const id = card.getAttribute('id')
+    function dataPointToClientXY(id) {
       const gd = R.els.chartPanel;
       const data = gd._fullData || gd.data || [];
+      const pe = gd.querySelector('.cartesianlayer .plot');
       const rect = gd.getBoundingClientRect();
       let clientX = null;
       let clientY = null;
@@ -389,17 +371,36 @@
           clientY = rect.top + yPx;
           break
         }
-
-
       }
-      card._connector = { line, clientX, clientY };
+      return {clientX: clientX, clientY: clientY};
+    }
+    function attachConnector(card) {
+      let ov = document.getElementById('plot-overlay');
+      if (!ov) {
+        ov = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+        ov.id = 'plot-overlay';
+        Object.assign(ov.style, {
+          position: 'fixed', left: 0, top: 0, width: '100vw', height: '100vh',
+          pointerEvents: 'none', zIndex: 1049
+        });
+        document.body.appendChild(ov);
+      }
+      const line = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+      line.setAttribute('stroke', '#afafaf');
+      line.setAttribute('stroke-width', '1');
+      line.setAttribute('stroke-linecap', 'round');
+      ov.appendChild(line);
+
+      const id = card.getAttribute('id')
+      // const { clientX, clientY } = dataPointToClientXY(id)
+      card.line = line;
       updateConnector(card);
       card.addEventListener('dragmove', () => updateConnector(card));
     }
     function removeConnector(card) {
-      if (card?._connector?.line) {
-        card._connector.line.remove();
-        card._connector = null;
+      if (card?.line) {
+        card.line.remove();
+        card.line = null;
       }
     }
     function removeCards(ids=null, cards=null) {
@@ -522,7 +523,7 @@
       const rect = R.els.chartPanel.getBoundingClientRect();
       const start = rect.x;
       const stop = rect.width;
-      const x = row[R.x] * rect.width;
+      const x = dataPointToClientXY(row.key)['clientX'];
       const left = x - (width / 2) -5;
       const right = x + (width / 2) + 5;
       if (left < start) {
@@ -1087,27 +1088,24 @@
       bootstrap.Modal.getInstance(R.els.configModal)?.show();
     });
 
-    const updateConnections = () => {
+    const updateConnectors = () => {
       document.querySelectorAll('.card').forEach(card => {
         if (card._connector) R.utilities.updateConnector(card);
       });
     }
-    const holder = R.els.chartPanel;
     R.els.chartPanel.on('plotly_relayout', () => {
       R.utilities.alignModebarWithLegend();
-      updateConnections();
+      updateConnectors();
     });
     window.addEventListener('resize', () => {
       R.utilities.alignModebarWithLegend();
-      updateConnections();
+      updateConnectors();
     });
-
-    // if (holder.removeAllListeners) holder.removeAllListeners('plotly_click');
-    holder.on('plotly_click', (data) => {
+    if (R.els.chartPanel.removeAllListeners) R.els.chartPanel.removeAllListeners('plotly_click');
+    R.els.chartPanel.on('plotly_click', (data) => {
       const id = data.points[0].id;
       q(id) ? R.utilities.hideCompounds([id]) : R.utilities.viewCompounds([id])
     });
-
 
     R.els.btnEqualAxis.addEventListener('click', () => {
       squareChartWithDiagonal();
