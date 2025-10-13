@@ -108,6 +108,8 @@
   }
 
   R.els = {
+    btnHitsModal : q('btnHitsModal'),
+    btnEqualAxis : q('btnEqualAxis'),
     switchers    : q('switchers'),
     selectors    : q('selectors'),
     xSel         : q('xSel'),
@@ -123,13 +125,11 @@
     btnSaveConfig: q('btnSaveConfig'),
     configModal  : q('configModal'),
     encodingModal: q('encodingModal'),
-    btnHitsModal    : q('btnHitsModal'),
     hitsModal    : q('hitsModal'),
     hitsTable    : q('hitsTable'),
     numHits      : q('numHits'),
     topHitsModal : q('topHitsModal'),
-    topHitsTable : q('topHitsTable'),
-    btnEqualAxis : q('btnEqualAxis')
+    topHitsTable : q('topHitsTable')
   }
 
   R.io = (() => {
@@ -247,59 +247,7 @@
       }
         return [String(row.library ?? ''), ...R.smilesColumns.map(c => String(row?.[c] ?? ''))].join('|');
     };
-    const getRDKit = () => {
-      if (R.RDKit) return Promise.resolve(R.RDKit);
-      if (!R.RDKitPromise) {
-        // initRDKitModule comes from rdkit.js (Emscripten factory)
-        R.RDKitPromise = initRDKitModule()
-          .then(mod => (R.RDKit = mod))
-          .catch(err => {
-            R.RDKitPromise = null;
-            throw err;
-          });
-      }
-      return R.RDKitPromise;
-    };
-    const getSMILES = (row) => { return Object.entries(R.config.render).map((k, v) => v ? row?.[k] : ''); }
-    const smilesSVG = (smi) => {
-      const id = 'svg_'+Math.random().toString(36).slice(2,9);
-      return `<svg id="${id}" class="smiles-svg" data-smiles="${smi || ''}" 
-              viewBox="0 0 ${R.config.structure.width || 240} ${R.config.structure.height || 100}"></svg>`;
-    };
-    async function drawSMILES(el) {
-      const rdk = await getRDKit();
-      const svgs = el.querySelectorAll("svg.smiles-svg:not([data-rendered='1'])");
-      for (const node of svgs) {
-        const smi = node.getAttribute("data-smiles").split(' ')[0] || "";
-        if (!smi) { node.setAttribute("data-rendered","1"); continue; }
-        try {
-          const mol = rdk.get_mol(smi);
-          const details = {
-            width: R.config.structure.width,
-            height: R.config.structure.height,
-            // thickness and size controls:
-            bondLineWidth: 1,      // stroke thickness (user units)
-            fixedBondLength: 30,     // base bond length; larger -> bigger drawing
-            scaleBondWidth: false,   // keep line thickness constant when scaling
-
-            // optional niceties:
-            padding: 0.0,           // extra whitespace around the drawing
-            kekulize: true,
-            addStereoAnnotation: false,
-            legend: ""
-          };
-          const svgText = mol.get_svg_with_highlights(JSON.stringify(details));
-          mol.delete();
-          const w = details['width'];
-          const h = details['height']
-          node.outerHTML = svgText.replace(/<svg\b/,
-            `<svg data-rendered="1" class="smiles-svg" width="${w}" height="${h}" viewBox="0 0 ${w} ${h}"`);
-        } catch (e) {
-          node.setAttribute("data-rendered","1");
-          console.warn("SMILES render error:", smi, e);
-        }
-      }
-    }
+    const getSMILES = (row) => Object.entries(R.config.render) .filter(([k, v]) => v).map(([k]) => row?.[k] ?? '');
     const makeDraggable = (el, handle) => {
       let startX, startY, startLeft, startTop;
 
@@ -479,7 +427,8 @@
     }
     const assembleCompoundCard = (row) => {
       const smiles = getSMILES(row);
-      const trs = smiles.map(s => `<tr><td colspan="2">${smilesSVG(s)}</td></tr>`);
+      console.log(smiles)
+      const trs = smiles.map(s => `<tr><td colspan="2">${SmilesRenderer.smilesSVG(s, R.config.structure.width, R.config.structure.height)}</td></tr>`);
 
       const text = assembleHoverText(row);
       const parts = text.split('<br>');
@@ -497,7 +446,7 @@
       card.setAttribute('id', row.key)
       card.className = 'card compound-card';
       card.style.position = 'fixed';
-      card.style.width = `$ width}px`;
+      card.style.width = `${width}px`;
       card.style.zIndex = '1050';
       card.style.pointerEvents = 'auto';
 
@@ -538,7 +487,7 @@
 
       card.style.top = (rect.y + 30) + 'px';
       card.style.display = 'block';
-      card.style.fontsize = '0.8rem';
+      card.style.fontSize = '0.8rem';
 
       document.body.appendChild(card);
       makeDraggable(card, header);
@@ -582,7 +531,7 @@
         }
       }
 
-      drawSMILES(card);
+      SmilesRenderer.drawSMILES(card);
 
       return card
     };
@@ -633,7 +582,7 @@
           field: c,
           width: R.config.structure.width,
           formatter: (cell) => {
-            const html = R.utilities.smilesSVG(cell.getValue());
+            const html = SmilesRender.smilesSVG(cell.getValue(), R.config.structure.width, R.config.structure.height);
             requestAnimationFrame(() => R.utilities.drawSMILES(cell.getElement()));
             return html
           }
@@ -655,12 +604,6 @@
         columns.push({title: 'HH', field: 'history_hits', sorter: 'number', formatter: (cell) => cell.getValue() ? cell.getValue().split(',').length : 0})
       }
       return columns
-    };
-    const stableRedraw = (table) => {
-      if (!table) return;
-      table.redraw(true);                                // now
-      requestAnimationFrame(() => table.redraw(true));   // next frame
-      setTimeout(() => table.redraw(true), 350);         // after fade transition (~300ms)
     };
     const tabulize = (el, data, columns, modal) => {
       el.innerHTML = '';
@@ -686,10 +629,9 @@
       }
     }
 
-    return { smilesSVG, drawSMILES, makeDraggable, assembleCompoundCard, assembleCompoundName,
+    return { makeDraggable, assembleCompoundCard, assembleCompoundName,
              assembleKV, assembleCountScore, assembleHoverText, alignModebarWithLegend,
-             assembleColumns, stableRedraw, keyForRow, tabulize, updateHitsCount,
-             removeCards, viewCompounds, hideCompounds, updateConnector
+             assembleColumns, keyForRow, tabulize, updateHitsCount, viewCompounds, hideCompounds, updateConnector
            };
   })();
 
@@ -793,10 +735,6 @@
         marker: { color: rows.map(r => colorForAxis(r?.axis ?? 0)), size: size},
         x: rows.map(r => r?.[x]),
         y: rows.map(r => r?.[y]),
-        customdata: rows.map(r => {
-          return {SMILES: r.SMILES ?? '', c1_smiles: r.c1_smiles ?? '', c2_smiles: r.c2_smiles ?? '',
-                  c3_smiles: r.c3_smiles ?? '', key: r.key};
-        }),
         text: name.includes('sython') ? rows.map(r => R.utilities.assembleHoverText(r)) : '',
         hoverinfo: 'text',
         hovertemplate: `%{text}<extra></extra>`,
@@ -825,20 +763,14 @@
 
       const xMin = xsAll.length ? Math.min(0, ...xsAll) : 0;
       const xMax = xsAll.length ? Math.max(0, ...xsAll) : 1;
+      const xOffset = (xMax - xMin) * 0.05
       const yMin = ysAll.length ? Math.min(0, ...ysAll) : 0;
       const yMax = ysAll.length ? Math.max(0, ...ysAll) : 1;
+      const yOffset = (yMax - yMin) * 0.05
 
       const axisDefault = {
-        mirror: true,
-        nticks: 3,
-        zeroline: false,
-        showgrid: false,
-        linecolor: '#939393',
-        linewidth: 1,
-        ticks: 'outside',
-        ticklen: 1,
-        tickwidth: 1,
-        automargin: true,
+        mirror: true, nticks: 3, zeroline: false, showgrid: false, linecolor: '#939393',
+        linewidth: 1, ticks: 'outside', ticklen: 1, tickwidth: 1, automargin: true,
       };
 
       config.staticPlot = true;
@@ -871,10 +803,10 @@
         const showYticks = (cIdx === 0);
 
         layout[axisKey(trace.xaxis)] = Object.assign(layout[axisKey(trace.xaxis)] || {}, {
-          showticklabels: !!showXticks, range: [xMin * 0.9, xMax * 1.1], ...axisDefault
+          showticklabels: !!showXticks, range: [xMin - xOffset, xMax + xOffset], ...axisDefault
         });
         layout[axisKey(trace.yaxis)] = Object.assign(layout[axisKey(trace.yaxis)] || {}, {
-          showticklabels: !!showYticks, range: [yMin * 0.9, yMax * 1.1], ...axisDefault
+          showticklabels: !!showYticks, range: [yMin - yOffset, yMax + yOffset], ...axisDefault
         });
 
         // Add in-panel title: top-left of the facet

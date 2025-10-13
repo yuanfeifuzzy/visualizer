@@ -42,8 +42,7 @@
     </div>
 
     <!--Switchers-->
-    <div class="col-9 col-sm-10 col-md-4 col-lg-5 d-flex justify-content-end"
-         id="switchers">
+    <div class="col-9 col-sm-10 col-md-4 col-lg-5 d-flex justify-content-end" id="switchers">
       <button type="button" class="btn btn-light position-relative py-0 px-2 disabled" id="btnHitsModal"
               data-bs-toggle="modal" data-bs-target="#hitsModal" title="Candidate Hits">
         <i class="bi bi-bag"></i>
@@ -110,7 +109,7 @@
   </div>
 
   <!--Chart panel-->
-  <div style="height: calc(100vh - 65px)">
+  <div id="chartContainer">
     <div id="chartPanel" class="w-100 h-100"></div>
   </div>
 
@@ -357,8 +356,9 @@
   <script src="https://cdn.plot.ly/plotly-3.1.0.min.js" charset="utf-8"></script>
   <script src="https://unpkg.com/@rdkit/rdkit/dist/RDKit_minimal.js"></script>
   <script type="text/javascript" src="https://unpkg.com/tabulator-tables@6.3.1/dist/js/tabulator.min.js"></script>
-  <script src="visualizer.js"></script>
-  <script>
+  <script type="text/javascript" src="smiles-render.js"></script>
+  <script type="text/javascript" src="visualizer.js"></script>
+  <script type="text/javascript">
     document.addEventListener('DOMContentLoaded', () => {
       Visualizer.init({url: 'data.tsv.gz'})
     })
