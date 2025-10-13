@@ -28,8 +28,6 @@
     library: null,
     hitsTable: null,
     topHitsTable: null,
-    RDKit: null,
-    RDKitPromise: null,
   };
 
   const q = id => R.root.getElementById(id);
@@ -62,17 +60,17 @@
     };
   }
   const populateConfigForm = (cfg) => {
-    if (!cfg) return; // nothing to populate
+    if (!cfg) return;
 
-    const setVal = (id, v) => { const el = q(id); if (el != null && v != null) el.value = v; };
+    const setVal = (id, v) => { const el = q(id); if (el != null && v != null && v !== '') el.value = v; };
     const setNum = (id, v) => { const el = q(id); if (el != null && Number.isFinite(v)) el.value = String(v); };
     const setChk = (id, v) => { const el = q(id); if (el != null && typeof v === 'boolean') el.checked = v; };
 
     // Typography (global + card if you have both)
     setVal('fontFamily',   cfg.font);
     setNum('fontSize',     cfg.fontSize);
-    if (cfg.fontCC !== undefined)  setVal('fontFamilyCC', cfg.fontCC);
-    if (cfg.fontSizeCC !== undefined) setNum('fontSizeCC', cfg.fontSizeCC);
+    setVal('fontFamilyCC', cfg.fontCC);
+    setNum('fontSizeCC', cfg.fontSizeCC);
 
     // Rendering toggles
     if (cfg.render) {
@@ -112,23 +110,23 @@
     btnEqualAxis : q('btnEqualAxis'),
     switchers    : q('switchers'),
     selectors    : q('selectors'),
-    xSel         : q('xSel'),
     btnX         : q('btnX'),
-    ySel         : q('ySel'),
-    btnY         : q('btnY'),
-    librarySel   : q('librarySel'),
+    xSel         : q('xSel'),
     btnLibrary   : q('btnLibrary'),
-    chartPanel   : q('chartPanel'),
+    librarySel   : q('librarySel'),
+    btnY         : q('btnY'),
+    ySel         : q('ySel'),
     uploadPanel  : q('uploadPanel'),
     fileInput    : q('fileInput'),
     dz           : q('dropzone'),
-    btnSaveConfig: q('btnSaveConfig'),
+    chartPanel   : q('chartPanel'),
     configModal  : q('configModal'),
+    btnSaveConfig: q('btnSaveConfig'),
     encodingModal: q('encodingModal'),
+    topHitsModal : q('topHitsModal'),
     hitsModal    : q('hitsModal'),
     hitsTable    : q('hitsTable'),
     numHits      : q('numHits'),
-    topHitsModal : q('topHitsModal'),
     topHitsTable : q('topHitsTable')
   }
 
@@ -248,50 +246,7 @@
         return [String(row.library ?? ''), ...R.smilesColumns.map(c => String(row?.[c] ?? ''))].join('|');
     };
     const getSMILES = (row) => Object.entries(R.config.render) .filter(([k, v]) => v).map(([k]) => row?.[k] ?? '');
-    const makeDraggable = (el, handle) => {
-      let startX, startY, startLeft, startTop;
-
-      const onDown = (e) => {
-        if (e.button !== undefined && e.button !== 0) return;
-        handle.setPointerCapture?.(e.pointerId);
-        const r = el.getBoundingClientRect();
-        startX = e.clientX; startY = e.clientY;
-        startLeft = r.left;  startTop  = r.top;
-        window.addEventListener('pointermove', onMove);
-        window.addEventListener('pointerup', onUp, { once: true });
-        e.preventDefault();
-      };
-
-      const onMove = (e) => {
-        const dx = e.clientX - startX;
-        const dy = e.clientY - startY;
-        let left = startLeft + dx, top = startTop + dy;
-        el.style.left = left + 'px';
-        el.style.top  = top  + 'px';
-        // notify listeners
-        el.dispatchEvent(new CustomEvent('dragmove', { detail: { left, top } }));
-      };
-
-      const onUp = (e) => {
-        handle.releasePointerCapture?.(e.pointerId);
-        window.removeEventListener('pointermove', onMove);
-      };
-
-      handle.addEventListener('pointerdown', onDown);
-      handle.style.cursor = 'grab';
-      el.style.touchAction = 'none';
-    };
-    function updateConnector(card) {
-      const { clientX, clientY } = dataPointToClientXY(card.getAttribute('id'));
-      const rect = card.getBoundingClientRect();
-      const toX = rect.left + rect.width / 2;
-      const toY = rect.bottom;
-      card.line.setAttribute('x1', String(clientX));
-      card.line.setAttribute('y1', String(clientY));
-      card.line.setAttribute('x2', String(toX));
-      card.line.setAttribute('y2', String(toY));
-    }
-    function dataPointToClientXY(id) {
+    function ClientXY(id) {
       const gd = R.els.chartPanel;
       const data = gd._fullData || gd.data || [];
       const pe = gd.querySelector('.cartesianlayer .plot');
@@ -322,6 +277,48 @@
       }
       return {clientX: clientX, clientY: clientY};
     }
+    const Draggable = (el, handle) => {
+      let startX, startY, startLeft, startTop;
+
+      const onDown = (e) => {
+        if (e.button !== undefined && e.button !== 0) return;
+        handle.setPointerCapture?.(e.pointerId);
+        const r = el.getBoundingClientRect();
+        startX = e.clientX; startY = e.clientY;
+        startLeft = r.left;  startTop  = r.top;
+        window.addEventListener('pointermove', onMove);
+        window.addEventListener('pointerup', onUp, { once: true });
+        e.preventDefault();
+      };
+
+      const onMove = (e) => {
+        const dx = e.clientX - startX;
+        const dy = e.clientY - startY;
+        let left = startLeft + dx, top = startTop + dy;
+        el.style.left = left + 'px';
+        el.style.top  = top  + 'px';
+        el.dispatchEvent(new CustomEvent('dragmove', { detail: { left, top } }));
+      };
+
+      const onUp = (e) => {
+        handle.releasePointerCapture?.(e.pointerId);
+        window.removeEventListener('pointermove', onMove);
+      };
+
+      handle.addEventListener('pointerdown', onDown);
+      handle.style.cursor = 'grab';
+      el.style.touchAction = 'none';
+    };
+    function updateConnector(card) {
+      const { clientX, clientY } = ClientXY(card.getAttribute('id'));
+      const rect = card.getBoundingClientRect();
+      const toX = rect.left + rect.width / 2;
+      const toY = rect.bottom;
+      card.line.setAttribute('x1', String(clientX));
+      card.line.setAttribute('y1', String(clientY));
+      card.line.setAttribute('x2', String(toX));
+      card.line.setAttribute('y2', String(toY));
+    }
     function attachConnector(card) {
       let ov = document.getElementById('plot-overlay');
       if (!ov) {
@@ -338,9 +335,7 @@
       line.setAttribute('stroke-width', '1');
       line.setAttribute('stroke-linecap', 'round');
       ov.appendChild(line);
-
-      const id = card.getAttribute('id')
-      // const { clientX, clientY } = dataPointToClientXY(id)
+      
       card.line = line;
       updateConnector(card);
       card.addEventListener('dragmove', () => updateConnector(card));
@@ -351,7 +346,7 @@
         card.line = null;
       }
     }
-    function removeCards(ids=null, cards=null) {
+    function removeCompoundCards(ids=null, cards=null) {
       let cs;
       if (ids) {
         cs = ids.map(id => q(id));
@@ -359,7 +354,7 @@
         if (cards) {
           cs = cards
         } else {
-          cs = document.querySelectorAll('.card');
+          cs = document.querySelectorAll('.compound-card');
         }
       }
       cs.forEach(card => {
@@ -387,7 +382,7 @@
     }
     function hideCompounds(ids=null) {
       ids = ids || [...document.querySelectorAll('.compound-card')].map(el => el.id) || [];
-      removeCards(ids);
+      removeCompoundCards(ids);
       R.topHitsTable.deleteRow(ids);
       restylePoints(null, ids, 'remove');
     }
@@ -472,7 +467,7 @@
       const rect = R.els.chartPanel.getBoundingClientRect();
       const start = rect.x;
       const stop = rect.width;
-      const x = dataPointToClientXY(row.key)['clientX'];
+      const x = ClientXY(row.key)['clientX'];
       const left = x - (width / 2) -5;
       const right = x + (width / 2) + 5;
       if (left < start) {
@@ -490,7 +485,7 @@
       card.style.fontSize = '0.8rem';
 
       document.body.appendChild(card);
-      makeDraggable(card, header);
+      Draggable(card, header);
       attachConnector(card)
 
       card.addEventListener('click', (e) => {
@@ -524,7 +519,7 @@
             window.location.href = `mailto:?subject=${subject}&body=${body}`;
             break;
           case 'close':
-            // removeCards(null, [ctx.card]);
+            // removeCompoundCards(null, [ctx.card]);
             // ctx.card.remove();
             hideCompounds([ctx.card.getAttribute('id')])
             break;
@@ -574,7 +569,7 @@
       const top  = Math.max(0, Math.round(lbox.top - gbox.top));
       mb.style.top = top + 'px';
     };
-    const assembleColumns = () => {
+    const buildColumns = () => {
       const smiles = {title: 'SMILES', columns: [], hozAlign: 'center'}
       for (const c of R.smilesColumns) {
         smiles.columns.push({
@@ -607,7 +602,7 @@
     };
     const tabulize = (el, data, columns, modal) => {
       el.innerHTML = '';
-      const table = new Tabulator(el, {
+      return  new Tabulator(el, {
         data: data,
         columns: columns,
         index: 'key',
@@ -616,8 +611,6 @@
         nestedFieldSeparator: "->",
         columnDefaults: { hozAlign: "center",  vertAlign: "middle", headerHozAlign: "center" },
       });
-
-      return table;
     };
     const updateHitsCount = (n) => {
       if (n > 0) {
@@ -629,9 +622,9 @@
       }
     }
 
-    return { makeDraggable, assembleCompoundCard, assembleCompoundName,
+    return { assembleCompoundCard, assembleCompoundName,
              assembleKV, assembleCountScore, assembleHoverText, alignModebarWithLegend,
-             assembleColumns, keyForRow, tabulize, updateHitsCount, viewCompounds, hideCompounds, updateConnector
+             buildColumns, keyForRow, tabulize, updateHitsCount, viewCompounds, hideCompounds, updateConnector
            };
   })();
 
@@ -672,7 +665,7 @@
     R.els.btnEqualAxis.classList.add('disabled');
   }
 
-  function squareChartWithDiagonal() {
+  function squareChart() {
     const gd = R.els.chartPanel;
     // 1) Collect x/y from current traces
     const xs = [];
@@ -865,7 +858,7 @@
         R.topHitsTable.updateData([data]);
       },
     };
-    const columns = [deleteCol, ...R.utilities.assembleColumns()]
+    const columns = [deleteCol, ...R.utilities.buildColumns()]
     R.hitsTable = R.utilities.tabulize(R.els.hitsTable, R.hits, columns, R.els.hitsModal);
   }
 
@@ -918,7 +911,7 @@
         R.utilities.updateHitsCount(table.getData().length);
       }
     }
-    const columns = [visibleColumn, hitsColumn, ...R.utilities.assembleColumns()]
+    const columns = [visibleColumn, hitsColumn, ...R.utilities.buildColumns()]
     R.topHitsTable = R.utilities.tabulize(R.els.topHitsTable, tops, columns, R.els.topHitsModal);
   }
 
@@ -1040,7 +1033,7 @@
     });
 
     R.els.btnEqualAxis.addEventListener('click', () => {
-      squareChartWithDiagonal();
+      squareChart();
     })
   }
 
