@@ -577,8 +577,8 @@
           field: c,
           width: R.config.structure.width,
           formatter: (cell) => {
-            const html = SmilesRender.smilesSVG(cell.getValue(), R.config.structure.width, R.config.structure.height);
-            requestAnimationFrame(() => R.utilities.drawSMILES(cell.getElement()));
+            const html = SmilesRenderer.smilesSVG(cell.getValue(), R.config.structure.width, R.config.structure.height);
+            requestAnimationFrame(() => SmilesRenderer.drawSMILES(cell.getElement()));
             return html
           }
         });
@@ -954,7 +954,7 @@
     R.tops = Object.create(null);
     for (const row of R.uniques) (R.tops[row.library] ??= []).push(row);
     for (const [k, v] of Object.entries(R.tops)) {
-      R.tops[k] = v.filter(a => (a.axis === 6) && (norm(a?.[R.x]) >= 0.5))
+      R.tops[k] = v.filter(a => (a.axis === 6) && (norm(a?.[R.x]) >= 0.3))
         .sort((a, b) => norm(b?.[R.x]) - norm(a?.[R.x]))
         .slice(0, R.config.nTopHits)
         .map(a => ({...a, visible: true}));

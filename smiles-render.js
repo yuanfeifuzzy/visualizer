@@ -130,26 +130,10 @@
         } else {
           const width = cfg.width || 200;
           const height = cfg.height || 100;
-          holder.innerHTML = svgText.replace(
-            /<svg\b/,
-            `<svg data-rendered="1" class="smiles-svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}"`
+          holder.outerHTML = svgText.replace(
+            /<svg /,
+            `<svg data-rendered="1" class="smiles-svg" width="${width}" height="${height}" `
           );
-          // Keep inline SVG (crisp, CSS-styleable). Preserve classes on the new root.
-          // var cls = holder.getAttribute('class') || '';
-          // .replace(/<svg\b/,
-    //         `<svg data-rendered="1" class="smiles-svg" width="${w}" height="${h}" viewBox="0 0 ${w} ${h}"`)
-    //       const s = svgText.replace(
-    //         /<svg\b/,
-    //         `<svg data-rendered="1" class="smiles-svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}"`
-    //       );
-          // // Replace the placeholder element
-          // const temp = document.createElement('div');
-          // temp.innerHTML = svgText.replace(
-          //   /<svg\b/,
-          //   `<svg data-rendered="1" class="smiles-svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}"`
-          // );
-          // const newSvg = temp.firstChild;
-          // holder.replaceWith(newSvg);
         }
       } catch (e) {
         console.warn('SMILES render error:', smi, e);
@@ -174,7 +158,7 @@
 
   function smilesSVG(smi, width=200, height=100, id='') {
     id = id || 'smiles_svg_' + Math.random().toString(36).slice(2,9);
-    return `<svg id="${id}" class="smiles-svg" data-smiles="${smi || ''}" viewBox="0 0 ${width || 200} ${height || 100}"></svg>`;
+    return `<svg id="${id}" class="smiles-svg" data-smiles="${smi || ''}"></svg>`;
   }
 
   function setDefaults(opts) {
