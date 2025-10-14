@@ -337,7 +337,9 @@
       ov.appendChild(line);
       
       card.line = line;
-      updateConnector(card);
+      requestAnimationFrame(() => {
+        updateConnector(card);
+      });
       card.addEventListener('dragmove', () => updateConnector(card));
     }
     function removeConnector(card) {
@@ -368,22 +370,108 @@
       return [...rows(R.hitsTable).filter(r => r.library === R.library),
               ...rows(R.topHitsTable).filter(r => (r.library === R.library) && (r.visible))];
     }
-    function viewCompounds(ids=null) {
+    let __renderToken = 0;
+
+    // Stable placement: wait for plot coords, CSS, and fonts, then clamp to panel
+    function placeCard(card, key) {
+      const measureAndPlace = () => {
+        const panel = R.els.chartPanel.getBoundingClientRect();
+        const { clientX } = ClientXY(key);             // plot→client px
+        const box = card.getBoundingClientRect();      // card border-box
+        const half = box.width / 2;
+
+        const start = panel.left + 5;                  // padding inside panel
+        const stop  = panel.right - 5;
+        const desired = clientX - half;
+        const left = Math.max(start, Math.min(stop - box.width, desired));
+
+        card.style.left = `${Math.round(left)}px`;
+        card.style.top  = `${Math.round(panel.top + 30)}px`;
+
+        card.line ? R.utilities.updateConnector(card): R.utilities.attachConnector(card);
+      };
+
+      const afterCSS = () => requestAnimationFrame(measureAndPlace);
+      const kick = () => requestAnimationFrame(afterCSS);
+
+      // Fonts can change metrics; wait once if needed
+      if (document.fonts && document.fonts.status !== 'loaded') {
+        document.fonts.ready.then(kick);
+      } else {
+        kick();
+      }
+    }
+    function viewCompounds(ids = null) {
+      // bump token to cancel older, in-flight runs
+      const myToken = ++__renderToken;
+
+      // 1) Keys to show
       let visibles = new Set(getVisibleHits().map(r => r.key));
-      if (ids) visibles = visibles.union(new Set(ids));
-      for (const row of R.uniques) {
-        if (visibles.has(row.key)) {
-          assembleCompoundCard(row);
-          row.visible = true;
-          R.topHitsTable.updateOrAddRow(row.key, row);
+      if (ids) {
+        if (typeof visibles.union === 'function') {
+          visibles = visibles.union(new Set(ids));
+        } else {
+          for (const id of ids) visibles.add(id);
         }
       }
-      restylePoints(null, visibles);
+      const rowsToShow = R.uniques.filter(row => visibles.has(row.key));
+
+      // 2) Update table state first (no DOM yet)
+      for (const row of rowsToShow) {
+        row.visible = true;
+        R.topHitsTable.updateOrAddRow(row.key, row);
+      }
+
+      // 3) Highlight points and wait until Plotly is actually re-drawn
+      const gd = R.els.chartPanel;
+      const after = new Promise(res => gd.once ? gd.once('plotly_afterplot', res) : res());
+      restylePoints(null, Array.from(visibles), 'replace');
+
+      // 4) Build/append cards only after plot is stable
+      after.then(() => {
+        // Cancel if a newer call started meanwhile
+        if (myToken !== __renderToken) return;
+
+        const newCards = [];
+        for (const row of rowsToShow) {
+          // HARD de-dupe: if the card already exists, reuse it (bring to front)
+          let card = document.getElementById(row.key);
+          if (!card) {
+            card = assembleCompoundCard(row);   // should append + return the element
+          } else {
+            card.style.display = 'block';
+            card.parentElement?.appendChild(card);
+          }
+          newCards.push([card, row.key]);
+        }
+
+        // 5) Place + connect after the DOM paints (double-rAF + fonts)
+        for (const [card, key] of newCards) {
+          placeCard(card, key);
+        }
+      });
     }
-    function hideCompounds(ids=null) {
-      ids = ids || [...document.querySelectorAll('.compound-card')].map(el => el.id) || [];
+    function hideCompounds(ids = null) {
+      // cancel any in-flight viewCompounds
+      ++__renderToken;
+
+      // Default: remove all compound cards
+      if (!ids) {
+        ids = Array.from(document.querySelectorAll('.compound-card')).map(el => el.id);
+      }
+      if (!ids || ids.length === 0) return;
+
+      // 1) Remove cards + connectors
       removeCompoundCards(ids);
+
+      // 2) Update table flags and remove rows
+      for (const id of ids) {
+        const row = R.uniques.find(r => r.key === id);
+        if (row) row.visible = false;
+      }
       R.topHitsTable.deleteRow(ids);
+
+      // 3) Un-highlight points
       restylePoints(null, ids, 'remove');
     }
     function restylePoints(rows=null, ids=null, mode='add') {
@@ -391,6 +479,7 @@
       if (uids) {
         const want = new Set(uids);
         const data = R.els.chartPanel.data;
+        const updaters = []
         for (let i = 0; i < data.length; i++) {
           const tr = data[i];
           const ids = tr?.ids;
@@ -416,13 +505,14 @@
             "selected.marker.line.color": '#000',
             "unselected.marker.opacity": 0.4
           };
-          Plotly.restyle(R.els.chartPanel, update, [i]);
+          updaters.push(Plotly.restyle(R.els.chartPanel, update, [i]));
         }
+        return Promise.all(updaters);
       }
+      return Promise.resolve();
     }
     const assembleCompoundCard = (row) => {
       const smiles = getSMILES(row);
-      console.log(smiles)
       const trs = smiles.map(s => `<tr><td colspan="2">${SmilesRenderer.smilesSVG(s, R.config.structure.width, R.config.structure.height)}</td></tr>`);
 
       const text = assembleHoverText(row);
@@ -464,29 +554,30 @@
         '<i class="bi bi-x-circle ms-auto text-danger" data-action="close" role="button" tabindex="0" title="Close"></i>';
       card.appendChild(footer);
 
-      const rect = R.els.chartPanel.getBoundingClientRect();
-      const start = rect.x;
-      const stop = rect.width;
-      const x = ClientXY(row.key)['clientX'];
-      const left = x - (width / 2) -5;
-      const right = x + (width / 2) + 5;
-      if (left < start) {
-        card.style.left = (start + 5) + 'px';
-      } else {
-        if (right > stop) {
-          card.style.left = (stop - 5 - width) + 'px';
-        } else {
-          card.style.left = left + 'px';
-        }
-      }
-
-      card.style.top = (rect.y + 30) + 'px';
       card.style.display = 'block';
       card.style.fontSize = '0.8rem';
-
       document.body.appendChild(card);
+
+      // Defer measurement/position until after layout
+      requestAnimationFrame(() => {
+        const panel = R.els.chartPanel.getBoundingClientRect();
+        const { clientX } = ClientXY(row.key);
+        const cardBox = card.getBoundingClientRect();
+        const half = cardBox.width / 2;
+
+        const start = panel.left;   // left edge of plot panel
+        const stop  = panel.right;  // right edge of plot panel (BUGFIX: was width)
+        const desiredLeft = clientX - half;
+        const clampedLeft =
+          desiredLeft < (start + 5) ? (start + 5) :
+          (desiredLeft + cardBox.width > stop - 5) ? (stop - 5 - cardBox.width) :
+          desiredLeft;
+
+        card.style.left = `${Math.round(clampedLeft)}px`;
+        card.style.top  = `${Math.round(panel.top + 30)}px`;
+      });
       Draggable(card, header);
-      attachConnector(card)
+      // attachConnector(card)
 
       card.addEventListener('click', (e) => {
         const btn = e.target.closest('button.copies');
@@ -551,7 +642,8 @@
       text.push(assembleKV(`<b>${R.y.replace('zscore_', '')} (y)`, `${row[R.y.replace('zscore_', 'count_')]} (${row[R.y].toFixed(2)})</b>`, tabulate));
       const scores = R.scoreColumns.filter(c => (c !== R.x && c !== R.y));
       for (const c of scores) text.push(assembleKV(`${c.replace('zscore_', '')}`, `${row[c.replace('zscore_', 'count_')]} (${row[c].toFixed(2)})`, tabulate));
-      if (row.history_hits) text.push(assembleKV('HH', `${(row.history_hits.match(/,/g) || []).length+1}`, tabulate));
+      const hh = row.history_hits ? (row.history_hits.match(/,/g) || []).length + 1 : 0
+      text.push(assembleKV('HH', `${hh}`, tabulate));
       return text
     };
     const assembleHoverText = (row) => {
@@ -624,7 +716,8 @@
 
     return { assembleCompoundCard, assembleCompoundName,
              assembleKV, assembleCountScore, assembleHoverText, alignModebarWithLegend,
-             buildColumns, keyForRow, tabulize, updateHitsCount, viewCompounds, hideCompounds, updateConnector
+             buildColumns, keyForRow, tabulize, updateHitsCount, viewCompounds, hideCompounds,
+             updateConnector, attachConnector
            };
   })();
 
@@ -1014,8 +1107,8 @@
     });
 
     const updateConnectors = () => {
-      document.querySelectorAll('.card').forEach(card => {
-        if (card._connector) R.utilities.updateConnector(card);
+      document.querySelectorAll('.compound-card').forEach(card => {
+        card.line ? R.utilities.updateConnector(card) : R.utilities.attachConnector(card);
       });
     }
     R.els.chartPanel.on('plotly_relayout', () => {
