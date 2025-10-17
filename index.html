@@ -118,11 +118,10 @@
     <div class="modal-dialog modal-lg modal-dialog-centered">
       <div class="modal-content">
         <div class="modal-header">
-          <h5 class="modal-title" id="helpModalLabel">Enrichment Profile Visualizer</h5>
+          <h5 class="modal-title" id="helpModalLabel">Enrichment Profile Visualizer Usage</h5>
           <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
         </div>
-        <div class="modal-body">
-          <h1>Enrichment Profile Visualizer</h1>
+        <div class="modal-body" id="helpModalBody" style="height:75vh; overflow:auto;">
         </div>
         <div class="modal-footer">
           <button class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
@@ -355,7 +354,9 @@
   <script src="https://unpkg.com/papaparse@5.4.1/papaparse.min.js"></script>
   <script src="https://cdn.plot.ly/plotly-3.1.0.min.js" charset="utf-8"></script>
   <script src="https://unpkg.com/@rdkit/rdkit/dist/RDKit_minimal.js"></script>
-  <script type="text/javascript" src="https://unpkg.com/tabulator-tables@6.3.1/dist/js/tabulator.min.js"></script>
+  <script src="https://unpkg.com/tabulator-tables@6.3.1/dist/js/tabulator.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+  <script type="text/javascript" src="usage.js"></script>
   <script type="text/javascript" src="smiles-render.js"></script>
   <script type="text/javascript" src="visualizer.js"></script>
   <script type="text/javascript">
