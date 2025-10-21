@@ -28,6 +28,7 @@
     library: null,
     hitsTable: null,
     topHitsTable: null,
+    cards: {}
   };
 
   const q = id => R.root.getElementById(id);
@@ -131,114 +132,86 @@
   }
 
   R.io = (() => {
-    /** @param {Uint8Array} u8 */
     const isGzip = (u8) => u8 && u8.length >= 2 && u8[0] === 0x1f && u8[1] === 0x8b;
-
-    /** @param {string} [name] */
     const inferDelimiter = (name = "") => {
       if (/\.tsv(\.gz)?$/i.test(name)) return "\t";
       if (/\.csv(\.gz)?$/i.test(name)) return ",";
-      return undefined; // let Papa auto-detect
+      return undefined;
     };
-
-    const papaParseText = (text, delimiter, PapaRef = window.Papa) =>
-      new Promise((resolve, reject) => {
-        PapaRef.parse(text, {
-          delimiter,
-          header: true,
-          dynamicTyping: true,
-          skipEmptyLines: true,
-          worker: true,
-          complete: ({ data }) => {
-            if (data && data.length) resolve(data.map((row, i) => ({ ...row, index: i })));
-            else reject(new Error("The file is empty or contains no valid data."));
-          },
-          error: reject
-        });
+    const papaParse = (input, download=false) => new Promise((resolve, reject) => {
+      const delimiter = inferDelimiter(input);
+      Papa.parse(input, {
+        delimiter,
+        download: download,
+        header: true,
+        dynamicTyping: true,
+        skipEmptyLines: true,
+        worker: true,
+        complete: ({ data }) => {
+          if (data && data.length) resolve(data.map((row, i) => ({ ...row, index: i, key: R.utilities.keyForRow(row) })));
+          else reject(new Error("The text/file is empty or contains no valid data."));
+        },
+        error: reject
       });
+    });
 
-    const papaParseFile = (file, delimiter, PapaRef = window.Papa) =>
-      new Promise((resolve, reject) => {
-        PapaRef.parse(file, {
-          delimiter,
-          header: true,
-          dynamicTyping: true,
-          skipEmptyLines: true,
-          worker: true,
-          complete: ({ data }) => {
-            if (data && data.length) resolve(data.map((row, i) => ({ ...row, index: i })));
-            else reject(new Error("The file is empty or contains no valid data."));
-          },
-          error: reject
-        });
-      });
-
-    /** Public: load a URL or File/Blob and parse (handles .gz via pako) */
-    const loadFile = async (fileOrUrl, { onComplete } = {}) => {
+    const load = async (input, { onComplete } = {}) => {
       try {
-        let parsedData;
-
-        // URL string
-        if (typeof fileOrUrl === "string") {
-          const url = fileOrUrl;
-          const delim = inferDelimiter(url);
-          if (/\.gz$/i.test(url)) {
-            const res = await fetch(url, { mode: "cors" });
+        let rows;
+        let download = false;
+        console.log(input)
+        if (typeof input === "string") {
+          if (/\.gz$/i.test(input)) {
+            const res = await fetch(input, { mode: "cors" });
             if (!res.ok) throw new Error(`Fetch failed: ${res.status} ${res.statusText}`);
+
             const u8 = new Uint8Array(await res.arrayBuffer());
             if (!isGzip(u8)) throw new Error("URL ends with .gz but payload is not gzip.");
-            const text = window.pako.ungzip(u8, { to: "string" }); // assumes UTF-8
-            parsedData = await papaParseText(text, delim, window.Papa);
+            input = window.pako.ungzip(u8, { to: "string" }); // assumes UTF-8
           } else {
-            parsedData = await new Promise((resolve, reject) => {
-              window.Papa.parse(url, {
-                download: true,
-                delimiter: delim,
-                header: true,
-                dynamicTyping: true,
-                skipEmptyLines: true,
-                worker: true,
-                complete: ({ data }) => {
-                  if (data && data.length) resolve(data.map((row, i) => ({ ...row, index: i })));
-                  else reject(new Error("The file is empty or contains no valid data."));
-                },
-                error: reject
-              });
-            });
+            download = true;
           }
+          rows = await papaParse(input, download)
         }
         // File/Blob
-        else if (fileOrUrl instanceof Blob) {
-          const file = fileOrUrl;
-          const delim = inferDelimiter(file.name);
-          const u8 = new Uint8Array(await file.arrayBuffer());
+        else if (input instanceof Blob) {
+          const u8 = new Uint8Array(await input.arrayBuffer());
           if (isGzip(u8)) {
-            const text = pakoRef.ungzip(u8, { to: "string" });
-            parsedData = await papaParseText(text, delim, PapaRef);
-          } else {
-            parsedData = await papaParseFile(file, delim, PapaRef);
+            input = pakoRef.ungzip(u8, { to: "string" });
           }
+          rows = await papaParseFile(input);
         } else {
           throw new Error("load expects a URL string or a File/Blob.");
         }
-        onComplete?.(parsedData);
+        onComplete?.(rows);
       } catch (err) {
-        console.error(err);
         throw err;
       }
     };
-
-    /** Public: accept already-materialized rows */
-    const loadData = (rows) => {
-      if (!Array.isArray(rows)) throw new Error("data must be an array of objects");
-      typeof window.afterDataLoaded === 'function' && window.afterDataLoaded(rows);
-      return rows;
-    };
-
-    // public API
-    return { loadFile, loadData };
+    return { load };
   })();
   R.utilities = (() => {
+    const findColumns = (columns, prefix = '', suffix = '', case_sensitive = false) => {
+      const normPrefix = case_sensitive ? prefix : prefix.toLowerCase();
+      const normSuffix = case_sensitive ? suffix : suffix.toLowerCase();
+
+      const cs = [];
+      for (const column of columns) {
+        const normColumn = case_sensitive ? column : column.toLowerCase();
+
+        const okPrefix = prefix ? normColumn.startsWith(normPrefix) : true;
+        const okSuffix = suffix ? normColumn.endsWith(normSuffix) : true;
+
+        if (okPrefix && okSuffix) {
+          cs.push(column);
+        }
+      }
+
+      if (cs.length === 0) {
+        throw Error(`No column was found with prefix "${prefix}" and suffix "${suffix}"`);
+      }
+      return cs;
+    }
     const keyForRow = (row) => {
       if (Object.prototype.hasOwnProperty.call(row, 'compound') && row.compound != null && row.compound !== '') {
         return String(row.compound);
@@ -275,7 +248,7 @@
           break
         }
       }
-      return {clientX: clientX, clientY: clientY};
+      return {x1: clientX, y1: clientY};
     }
     const Draggable = (el, handle) => {
       let startX, startY, startLeft, startTop;
@@ -310,14 +283,29 @@
       el.style.touchAction = 'none';
     };
     function updateConnector(card) {
-      const { clientX, clientY } = ClientXY(card.getAttribute('id'));
+      let x1, y1, x2, y2, left, top;
+      console.log('card state: ', card.state)
       const rect = card.getBoundingClientRect();
-      const toX = rect.left + rect.width / 2;
-      const toY = rect.bottom;
-      card.line.setAttribute('x1', String(clientX));
-      card.line.setAttribute('y1', String(clientY));
-      card.line.setAttribute('x2', String(toX));
-      card.line.setAttribute('y2', String(toY));
+      if (card?.state) {
+        // ({left, top, x1, y1, x2, y2} = card.state);
+        ({left, top} = card.state);
+      } else {
+
+        console.log('card rect: ', rect)
+        left = rect.left;
+        top = rect.top;
+
+      }
+
+      ({ x1, y1 } = ClientXY(card.getAttribute('id')));
+      x2 = rect.left + rect.width / 2;
+      y2 = rect.bottom;
+
+      card.line.setAttribute('x1', x1);
+      card.line.setAttribute('y1', y1);
+      card.line.setAttribute('x2', x2);
+      card.line.setAttribute('y2', y2);
+      card.state = {left: left, top: top, x1: x1, y1: y1, x2: x2, y2: y2}
     }
     function attachConnector(card) {
       let ov = document.getElementById('plot-overlay');
@@ -337,10 +325,9 @@
       ov.appendChild(line);
       
       card.line = line;
-      requestAnimationFrame(() => {
-        updateConnector(card);
-      });
+      requestAnimationFrame(() => { updateConnector(card); });
       card.addEventListener('dragmove', () => updateConnector(card));
+      return card;
     }
     function removeConnector(card) {
       if (card?.line) {
@@ -370,108 +357,77 @@
       return [...rows(R.hitsTable).filter(r => r.library === R.library),
               ...rows(R.topHitsTable).filter(r => (r.library === R.library) && (r.visible))];
     }
-    let __renderToken = 0;
-
-    // Stable placement: wait for plot coords, CSS, and fonts, then clamp to panel
-    function placeCard(card, key) {
-      const measureAndPlace = () => {
-        const panel = R.els.chartPanel.getBoundingClientRect();
-        const { clientX } = ClientXY(key);             // plot→client px
-        const box = card.getBoundingClientRect();      // card border-box
-        const half = box.width / 2;
-
-        const start = panel.left + 5;                  // padding inside panel
-        const stop  = panel.right - 5;
-        const desired = clientX - half;
-        const left = Math.max(start, Math.min(stop - box.width, desired));
-
-        card.style.left = `${Math.round(left)}px`;
-        card.style.top  = `${Math.round(panel.top + 30)}px`;
-
-        card.line ? R.utilities.updateConnector(card): R.utilities.attachConnector(card);
-      };
-
-      const afterCSS = () => requestAnimationFrame(measureAndPlace);
-      const kick = () => requestAnimationFrame(afterCSS);
-
-      // Fonts can change metrics; wait once if needed
-      if (document.fonts && document.fonts.status !== 'loaded') {
-        document.fonts.ready.then(kick);
-      } else {
-        kick();
+    function whenCardStable(card, done) {
+      function afterFonts(kick) {
+        if (document.fonts && document.fonts.status !== 'loaded') {
+          document.fonts.ready.then(kick, kick);
+        } else { kick(); }
       }
+      function doubleRAF(cb) {
+        requestAnimationFrame(function(){ requestAnimationFrame(cb); });
+      }
+      afterFonts(function(){
+        doubleRAF(function(){
+          var lastH = -1, stable = 0, tries = 0;
+          (function tick(){
+            var h = Math.round(card.getBoundingClientRect().height);
+            if (h === lastH) stable++; else { stable = 0; lastH = h; }
+            if (stable >= 1 || tries > 12) { done(); return; } // ~200ms cap
+            tries++;
+            requestAnimationFrame(tick);
+          })();
+        });
+      });
     }
+
     function viewCompounds(ids = null) {
-      // bump token to cancel older, in-flight runs
-      const myToken = ++__renderToken;
-
-      // 1) Keys to show
       let visibles = new Set(getVisibleHits().map(r => r.key));
-      if (ids) {
-        if (typeof visibles.union === 'function') {
-          visibles = visibles.union(new Set(ids));
-        } else {
-          for (const id of ids) visibles.add(id);
-        }
-      }
-      const rowsToShow = R.uniques.filter(row => visibles.has(row.key));
+      if (ids) visibles = visibles.union(new Set(ids));
+      const rows = R.uniques.filter(row => visibles.has(row.key));
 
-      // 2) Update table state first (no DOM yet)
-      for (const row of rowsToShow) {
+      for (const row of rows) {
         row.visible = true;
         R.topHitsTable.updateOrAddRow(row.key, row);
       }
 
-      // 3) Highlight points and wait until Plotly is actually re-drawn
+      // Highlight points and wait until Plotly is actually re-drawn
       const gd = R.els.chartPanel;
       const after = new Promise(res => gd.once ? gd.once('plotly_afterplot', res) : res());
       restylePoints(null, Array.from(visibles), 'replace');
 
-      // 4) Build/append cards only after plot is stable
+      // Build/append cards only after plot is stable
       after.then(() => {
-        // Cancel if a newer call started meanwhile
-        if (myToken !== __renderToken) return;
-
-        const newCards = [];
-        for (const row of rowsToShow) {
-          // HARD de-dupe: if the card already exists, reuse it (bring to front)
-          let card = document.getElementById(row.key);
+        const cards = [];
+        for (const row of rows) {
+          const key = row.key;
+          let card = R.cards[key];
           if (!card) {
-            card = assembleCompoundCard(row);   // should append + return the element
+            card = assembleCompoundCard(R.uniques.filter(r => r.key === key)[0]);
+            console.log('card rect after restyle: ', card.getBoundingClientRect())
+            R.cards[key] = card
           } else {
-            card.style.display = 'block';
-            card.parentElement?.appendChild(card);
+            card.classList.remove('d-none');
           }
-          newCards.push([card, row.key]);
+          cards.push(card);
+          R.cards[key] = card;
         }
 
-        // 5) Place + connect after the DOM paints (double-rAF + fonts)
-        for (const [card, key] of newCards) {
-          placeCard(card, key);
+        // Ensure connectors are correct after the DOM paints
+        for (const card of cards) {
+          card.line ? updateConnector(card) : attachConnector(card);
         }
       });
+
+      ids = Object.keys(R.cards).filter(key => !visibles.has(key));
+      hideCompounds(ids);
     }
     function hideCompounds(ids = null) {
-      // cancel any in-flight viewCompounds
-      ++__renderToken;
-
-      // Default: remove all compound cards
-      if (!ids) {
-        ids = Array.from(document.querySelectorAll('.compound-card')).map(el => el.id);
-      }
-      if (!ids || ids.length === 0) return;
-
-      // 1) Remove cards + connectors
-      removeCompoundCards(ids);
-
-      // 2) Update table flags and remove rows
+      ids = ids || Object.keys(R.cards);
       for (const id of ids) {
-        const row = R.uniques.find(r => r.key === id);
-        if (row) row.visible = false;
+        const card = R.cards[id];
+        removeConnector(card);
+        card.classList.add('d-none');
       }
-      R.topHitsTable.deleteRow(ids);
-
-      // 3) Un-highlight points
       restylePoints(null, ids, 'remove');
     }
     function restylePoints(rows=null, ids=null, mode='add') {
@@ -511,22 +467,19 @@
       }
       return Promise.resolve();
     }
-    const assembleCompoundCard = (row) => {
+    const assembleCompoundCard = (row, visible=true) => {
       const smiles = getSMILES(row);
       const trs = smiles.map(s => `<tr><td colspan="2">${SmilesRenderer.smilesSVG(s, R.config.structure.width, R.config.structure.height)}</td></tr>`);
-
       const text = assembleHoverText(row);
       const parts = text.split('<br>');
-
       let title = parts[0].replace('<b>', '<span>').replace('</b>', '</span>')
       title = title.replace(' [', '<button type="button" class="btn btn-outline-success rounded-pill btn-sm py-0 copies">').replace(']', '</button>')
-
       for (let i=1; i < parts.length; i++) {
         let [k, v] = parts[i].split(': ');
         trs.push(`<tr><td class="text-start">${k}</td><td class="text-end">${v}</td></tr>`);
       }
 
-      const card = document.createElement('div');
+      let card = document.createElement('div');
       const width = R.config.structure.width + 10;
       card.setAttribute('id', row.key)
       card.className = 'card compound-card';
@@ -556,28 +509,30 @@
 
       card.style.display = 'block';
       card.style.fontSize = '0.8rem';
+      card.style.visibility = visible ? 'visible' : 'hidden';
+
+      const panel = R.els.chartPanel.getBoundingClientRect();
+      const { x1, y1 } = ClientXY(row.key);
+      const start = panel.left + 5 + 60;
+      const stop  = panel.right - 5 - 5;
+      let left = x1 - (width / 2);
+      if (left < start) {
+        left = start;
+      } else {
+        if ((x1 + (width / 2) > stop)) left = stop - width;
+      }
+
+      card.style.left = String(Math.round(left)) + 'px';
+      card.style.top  = String(Math.round(panel.top + 30)) + 'px';
+
       document.body.appendChild(card);
+      R.cards[row.key] = card;
 
-      // Defer measurement/position until after layout
-      requestAnimationFrame(() => {
-        const panel = R.els.chartPanel.getBoundingClientRect();
-        const { clientX } = ClientXY(row.key);
-        const cardBox = card.getBoundingClientRect();
-        const half = cardBox.width / 2;
-
-        const start = panel.left;   // left edge of plot panel
-        const stop  = panel.right;  // right edge of plot panel (BUGFIX: was width)
-        const desiredLeft = clientX - half;
-        const clampedLeft =
-          desiredLeft < (start + 5) ? (start + 5) :
-          (desiredLeft + cardBox.width > stop - 5) ? (stop - 5 - cardBox.width) :
-          desiredLeft;
-
-        card.style.left = `${Math.round(clampedLeft)}px`;
-        card.style.top  = `${Math.round(panel.top + 30)}px`;
-      });
+      SmilesRenderer.drawSMILES(card);
+      card = attachConnector(card)
+      updateConnector(card);
+      requestAnimationFrame(function(){ updateConnector(card); });
       Draggable(card, header);
-      // attachConnector(card)
 
       card.addEventListener('click', (e) => {
         const btn = e.target.closest('button.copies');
@@ -592,32 +547,25 @@
         handleFooterAction(icon.dataset.action, { card, footer });
       });
 
-      // Centralized actions
       function handleFooterAction(action, ctx) {
         switch (action) {
           case 'bag':
             break;
           case 'copy': {
-            // Example: copy first SMILES in this card (adjust selector as needed)
             const smiles = ctx.card.querySelector('.smiles-svg')?.dataset.smiles || '';
             if (smiles) navigator.clipboard?.writeText(smiles).catch(console.warn);
             break;
           }
           case 'email':
-            // Example: open mailto (customize subject/body)
             const subject = encodeURIComponent('Compound info');
             const body = encodeURIComponent('See attached details.');
             window.location.href = `mailto:?subject=${subject}&body=${body}`;
             break;
           case 'close':
-            // removeCompoundCards(null, [ctx.card]);
-            // ctx.card.remove();
             hideCompounds([ctx.card.getAttribute('id')])
             break;
         }
       }
-
-      SmilesRenderer.drawSMILES(card);
 
       return card
     };
@@ -637,6 +585,7 @@
     };
     const assembleKV = (k, v, tabulate=false) => { return tabulate ? `<tr><td>${k}</td><td>${v}</td></tr>` : `${k}: ${v}`};
     const assembleCountScore = (row, tabulate=false) => {
+      console.log(row)
       let text = [];
       text.push(assembleKV(`<b>${R.x.replace('zscore_', '')} (x)`, `${row[R.x.replace('zscore_', 'count_')]} (${row[R.x].toFixed(2)})</b>`, tabulate));
       text.push(assembleKV(`<b>${R.y.replace('zscore_', '')} (y)`, `${row[R.y.replace('zscore_', 'count_')]} (${row[R.y].toFixed(2)})</b>`, tabulate));
@@ -714,14 +663,13 @@
       }
     }
 
-    return { assembleCompoundCard, assembleCompoundName,
+    return { findColumns, assembleCompoundCard, assembleCompoundName,
              assembleKV, assembleCountScore, assembleHoverText, alignModebarWithLegend,
-             buildColumns, keyForRow, tabulize, updateHitsCount, viewCompounds, hideCompounds,
-             updateConnector, attachConnector
+             buildColumns, keyForRow, tabulize, updateHitsCount, viewCompounds, hideCompounds
            };
   })();
 
-  function populateSelector() {
+  function buildSelector() {
     const buildOptions = (selector, options, tag, selected, btn) => {
       if (!selector) return;
       selector.innerHTML = '';
@@ -798,9 +746,20 @@
     });
   }
 
-  function renderChart() {
-    const holder = R.els.chartPanel;
+  function handleChartEvent(gd) {
+    if (R.library !== 'All') {
+      R.utilities.alignModebarWithLegend();
+      console.log('aligned modebar')
+      // gd.removeAllListeners?.('plotly_click');
+      gd.on('plotly_click', ev => {
+        const id = ev.points[0].id;
+        // q(id) ? R.utilities.hideCompounds([id]) : R.utilities.viewCompounds([id])
+        R.utilities.viewCompounds([id])
+      });
+    }
+  }
 
+  function renderChart() {
     const x = R.x || R.els.btnX?.textContent.split(': ')[1];
     const y = R.y || R.els.btnY?.textContent.split(': ')[1];
     const library = R.library || R.els.btnLibrary?.textContent.split(': ')[1];
@@ -926,10 +885,9 @@
       layout.yaxis = {title: {text: `${y.replace('zscore_', '')} (z-score)`}, ...axisDefault};
     }
 
-    const plotter = (global.Plotly && (global.Plotly.react || global.Plotly.newPlot || global.Plotly.plot));
-    plotter(holder, traces.filter(r => r), layout, config)
-
-    R.utilities.alignModebarWithLegend(holder);
+    Plotly.react(R.els.chartPanel, traces.filter(r => r), layout, config)
+      .then(handleChartEvent)
+      .catch(err => console.error('Failed to make chart: ', err));
   }
 
   function buildHitsTable() {
@@ -1008,7 +966,7 @@
     R.topHitsTable = R.utilities.tabulize(R.els.topHitsTable, tops, columns, R.els.topHitsModal);
   }
 
-  function processData() {
+  function analyzeData() {
     const groups = new Map();               // key -> indices[]
     const groupSizeByKey = new Map();       // key -> count
     const bestByKey = new Map();            // key -> { idx, score }
@@ -1056,7 +1014,7 @@
 
   function bindEvents() {
     R.els.dz = Dropzone.forElement("#dropzone");
-    R.els.dz.on('addedfile', (file) => { if (file) loadFile(file).catch(R.onError || console.error); });
+    R.els.dz.on('addedfile', (file) => { if (file) R.io.load(file, { onComplete: initializePage }).catch(R.onError || console.error); });
 
     const bindDropdown = (menu, btn, label) => {
       menu.addEventListener('click', (e) => {
@@ -1073,21 +1031,11 @@
 
         R[label.toLowerCase()] = value;
 
-        try {
-          const dd = bootstrap.Dropdown.getOrCreateInstance(btn);
-          dd.hide();
-        } catch (_) { /* safe no-op if bootstrap not present */ }
+        try { bootstrap.Dropdown.getOrCreateInstance(btn).hide(); } catch (_) {}
 
-        processData();
+        analyzeData();
         renderChart();
-
-        if (R.library === 'All') {
-          R.els.btnEqualAxis.classList.add('disabled');
-        } else {
-          R.els.btnEqualAxis.classList.remove('disabled');
-          R.utilities.hideCompounds();
-          R.utilities.viewCompounds();
-        }
+        R.library === 'All' ? R.utilities.hideCompounds() : R.utilities.viewCompounds();
       });
     }
     bindDropdown(R.els.xSel, R.els.btnX, 'X')
@@ -1106,80 +1054,55 @@
       bootstrap.Modal.getInstance(R.els.configModal)?.show();
     });
 
-    const updateConnectors = () => {
-      document.querySelectorAll('.compound-card').forEach(card => {
-        card.line ? R.utilities.updateConnector(card) : R.utilities.attachConnector(card);
-      });
-    }
-    R.els.chartPanel.on('plotly_relayout', () => {
-      R.utilities.alignModebarWithLegend();
-      updateConnectors();
-    });
-    window.addEventListener('resize', () => {
-      R.utilities.alignModebarWithLegend();
-      updateConnectors();
-    });
-    if (R.els.chartPanel.removeAllListeners) R.els.chartPanel.removeAllListeners('plotly_click');
-    R.els.chartPanel.on('plotly_click', (data) => {
-      const id = data.points[0].id;
-      q(id) ? R.utilities.hideCompounds([id]) : R.utilities.viewCompounds([id])
-    });
+    // const updateConnectors = () => {
+    //   document.querySelectorAll('.compound-card').forEach(card => {
+    //     card.line ? R.utilities.updateConnector(card) : R.utilities.attachConnector(card);
+    //   });
+    // }
+    // R.els.chartPanel.on('plotly_relayout', () => {
+    //   R.utilities.alignModebarWithLegend();
+    //   updateConnectors();
+    // });
+    // window.addEventListener('resize', () => {
+    //   R.utilities.alignModebarWithLegend();
+    //   updateConnectors();
+    // });
 
-    R.els.btnEqualAxis.addEventListener('click', () => {
-      squareChart();
-    })
+    // if (R.els.chartPanel.removeAllListeners) R.els.chartPanel.removeAllListeners('plotly_click');
+    // R.els.chartPanel.on('plotly_click', (data) => {
+    //   const id = data.points[0].id;
+    //   q(id) ? R.utilities.hideCompounds([id]) : R.utilities.viewCompounds([id])
+    // });
+
+    // R.els.btnEqualAxis.addEventListener('click', () => {
+    //   squareChart();
+    // })
   }
 
-  function preparePage(rows) {
-    const findColumns = (columns, prefix = '', suffix = '', case_sensitive = false) => {
-      const normPrefix = case_sensitive ? prefix : prefix.toLowerCase();
-      const normSuffix = case_sensitive ? suffix : suffix.toLowerCase();
-
-      const cs = [];
-      for (const column of columns) {
-        const normColumn = case_sensitive ? column : column.toLowerCase();
-
-        const okPrefix = prefix ? normColumn.startsWith(normPrefix) : true;
-        const okSuffix = suffix ? normColumn.endsWith(normSuffix) : true;
-
-        if (okPrefix && okSuffix) {
-          cs.push(column);
-        }
-      }
-
-      if (cs.length === 0) {
-        throw Error(`No column was found with prefix "${prefix}" and suffix "${suffix}"`);
-      }
-      return cs;
-    }
+  function initializePage(rows) {
     const columns = Object.keys(rows[0]);
-
     R.columns = columns;
-    R.countColumns = findColumns(columns, 'count_')
-    R.scoreColumns = findColumns(columns, 'zscore_')
-    R.smilesColumns = findColumns(columns, '', '_smiles')
+    R.countColumns = R.utilities.findColumns(columns, 'count_')
+    R.scoreColumns = R.utilities.findColumns(columns, 'zscore_')
+    R.smilesColumns = R.utilities.findColumns(columns, '', '_smiles')
     R.libraries = [...new Set((rows ?? []).map(r => r.library))];
     R.rows = rows.map(row => (row.key = R.utilities.keyForRow(row), row));
 
-    populateSelector();
-    processData();
+    buildSelector();
+    analyzeData();
 
     buildHitsTable();
     buildTopHitsTable();
+
     renderChart();
     bindEvents();
   }
 
-  // ---------- Public API ----------
   global.Visualizer = {
-    async init(opts = {}) {
-      R.root = opts.root || document;
+    async init(input=null) {
       GlobalConfig();
-
-      if (opts.data) {
-        R.io.loadData(opts.data, { onComplete: preparePage }).catch(console.error);
-      } else if (opts.url) {
-        await R.io.loadFile(opts.url, { onComplete: preparePage }).catch(console.error);
+      if (input) {
+        await R.io.load(input, { onComplete: initializePage }).catch(console.error);
       } else {
         R.els.uploadPanel.classList.remove('d-none')
       }

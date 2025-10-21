@@ -8,7 +8,7 @@
 
 ---
 
-## 1) Overview
+## Overview
 The **Enrichment Profile Visualizer (EPV)** is a single‑page web app for interactive inspection 
 of enrichment data (e.g., DEL or HTS outputs). It supports:
 - Drag‑and‑drop loading of CSV/TSV (optionally gzipped).
@@ -20,7 +20,7 @@ All functionality runs client‑side in the browser, no backend required.
 
 ---
 
-## 2) File Structure
+## File Structure
 Place these files in the same directory:
 ```
 index.html
@@ -34,20 +34,7 @@ Optional: a default dataset, e.g. `data.tsv.gz`.
 
 ---
 
-## 3) Dependencies (CDN)
-Loaded automatically by `index.html`:
-- Bootstrap 5.3.3 + Bootstrap Icons 1.13.1
-- Dropzone.js (drag‑and‑drop uploads)
-- pako (gzip)
-- PapaParse (CSV/TSV parsing)
-- Plotly.js 3.1.0
-- Tabulator 6.3.1
-- RDKit.js (minimal build)
-- marked (usage generating)
-
----
-
-## 4) Quick Start
+## Quick Start
 **Option A — Local file:** open `index.html` in a modern browser (Chrome/Edge/Firefox/Safari).  
 It will initialize with a default dataset (data.tsv.gz) if exists and configured in `index.html`:
 ```html
@@ -68,7 +55,7 @@ python -m http.server 8000
 
 ---
 
-## 5) Data Format
+## Data Format
 Your table must include a header row and at least two numeric columns for plotting. Common/expected fields:
 | Column | Description | Example |
 |---|---|---|
@@ -82,7 +69,7 @@ CSV/TSV or GZIP‑compressed versions are supported.
 
 ---
 
-## 6) UI Guide
+## UI Guide
 ### Toolbar (top)
 - **Help ( ? )** — Open help modal
 - **Candidate Hits (bag)** — Open hits table
@@ -107,7 +94,7 @@ Interactive Plotly scatter with zoom/pan/reset. Click points to inspect structur
 
 ---
 
-## 7) Configuration (⚙️)
+## Configuration (⚙️)
 - **Fonts**: family + size for charts and compound cards
 - **Structure rendering toggles**: SMILES, BB1, BB2, BB3
 - **Structure size**: width × height (px)
@@ -117,7 +104,7 @@ Click **Apply** to save/apply changes.
 
 ---
 
-## 8) Typical Workflow
+## Typical Workflow
 1. Open `index.html` (or serve locally).
 2. Load dataset (auto or via upload).
 3. Choose X/Library/Y fields.
@@ -128,7 +115,20 @@ Click **Apply** to save/apply changes.
 
 ---
 
-## 9) Styling Notes
+## Dependencies (CDN)
+Loaded automatically by `index.html`:
+- Bootstrap 5.3.3 + Bootstrap Icons 1.13.1
+- Dropzone.js (drag‑and‑drop uploads)
+- pako (gzip)
+- PapaParse (CSV/TSV parsing)
+- Plotly.js 3.1.0
+- Tabulator 6.3.1
+- RDKit.js (minimal build)
+- marked (usage generating)
+
+---
+
+## Styling Notes
 `style.css` sets:
 - Chart container height to `calc(100vh - 65px)`
 - Wide modals (95vw) and tall content (75vh) for tables
@@ -138,7 +138,7 @@ Modify to taste.
 
 ---
 
-## 10) Troubleshooting
+## Troubleshooting
 | Symptom | Cause | Fix |
 |---|---|---|
 | Upload unresponsive | Browser security/sandbox | Use Chrome/Edge or serve locally (`python -m http.server`) |
@@ -148,7 +148,7 @@ Modify to taste.
 
 ---
 
-## 11) Extensibility
+## Extensibility
 - Change the default dataset URL in `Visualizer.init({ url: ... })`
 - Extend chart logic and hit detection in `visualizer.js`
 - Adjust SMILES rendering in `smiles-render.js`
@@ -156,7 +156,7 @@ Modify to taste.
 
 ---
 
-## 12) License
+## License
 This project is licensed under the PolyForm Noncommercial License 1.0.0.
 You are free to use, copy, modify, and distribute this software for noncommercial purposes — 
 including academic research, internal analysis, and educational use — provided that this license 
