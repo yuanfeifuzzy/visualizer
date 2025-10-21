@@ -1101,8 +1101,11 @@
   global.Visualizer = {
     async init(input=null) {
       GlobalConfig();
-      if (input) {
-        await R.io.load(input, { onComplete: initializePage }).catch(console.error);
+
+      if (opts.data) {
+        R.io.loadData(opts.data, { onComplete: preparePage }).catch(console.error);
+      } else if (opts.url) {
+        await R.io.loadFile(opts.url, { onComplete: preparePage }).catch(console.error);
       } else {
         R.els.uploadPanel.classList.remove('d-none')
       }
