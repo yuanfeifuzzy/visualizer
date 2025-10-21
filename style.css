@@ -5,6 +5,7 @@
 #chartContainer { height: calc(100vh - 65px) }
 /* Size cap for the modal */
 #hitsModal .modal-dialog, #topHitsModal .modal-dialog { max-width: 95vw; }
+#encodingModal .modal-dialog { max-width: 75vw; }
 #topHitsModal .modal-content { height: 75vh; }
 
 /* Create an internal scrolling flex area */

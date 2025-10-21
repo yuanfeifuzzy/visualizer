@@ -107,28 +107,30 @@
   }
 
   R.els = {
-    btnHitsModal : q('btnHitsModal'),
-    btnEqualAxis : q('btnEqualAxis'),
-    switchers    : q('switchers'),
-    selectors    : q('selectors'),
-    btnX         : q('btnX'),
-    xSel         : q('xSel'),
-    btnLibrary   : q('btnLibrary'),
-    librarySel   : q('librarySel'),
-    btnY         : q('btnY'),
-    ySel         : q('ySel'),
-    uploadPanel  : q('uploadPanel'),
-    fileInput    : q('fileInput'),
-    dz           : q('dropzone'),
-    chartPanel   : q('chartPanel'),
-    configModal  : q('configModal'),
-    btnSaveConfig: q('btnSaveConfig'),
-    encodingModal: q('encodingModal'),
-    topHitsModal : q('topHitsModal'),
-    hitsModal    : q('hitsModal'),
-    hitsTable    : q('hitsTable'),
-    numHits      : q('numHits'),
-    topHitsTable : q('topHitsTable')
+    btnHitsModal  : q('btnHitsModal'),
+    btnEqualAxis  : q('btnEqualAxis'),
+    switchers     : q('switchers'),
+    selectors     : q('selectors'),
+    btnX          : q('btnX'),
+    xSel          : q('xSel'),
+    btnLibrary    : q('btnLibrary'),
+    librarySel    : q('librarySel'),
+    btnY          : q('btnY'),
+    ySel          : q('ySel'),
+    uploadPanel   : q('uploadPanel'),
+    fileInput     : q('fileInput'),
+    dz            : q('dropzone'),
+    chartPanel    : q('chartPanel'),
+    configModal   : q('configModal'),
+    btnSaveConfig : q('btnSaveConfig'),
+    encodingModal : q('encodingModal'),
+    encodingTable : q('encodingTable'),
+    encodingSMILES: q('encodingSMILES'),
+    topHitsModal  : q('topHitsModal'),
+    hitsModal     : q('hitsModal'),
+    hitsTable     : q('hitsTable'),
+    numHits       : q('numHits'),
+    topHitsTable  : q('topHitsTable')
   }
 
   R.io = (() => {
@@ -190,6 +192,7 @@
     };
     return { load };
   })();
+
   R.utilities = (() => {
     const findColumns = (columns, prefix = '', suffix = '', case_sensitive = false) => {
       const normPrefix = case_sensitive ? prefix : prefix.toLowerCase();
@@ -457,9 +460,7 @@
           const update = {
             selectedpoints: [selected],
             "selected.marker.size": 30,
-            "selected.marker.line.width": 2,
-            "selected.marker.line.color": '#000',
-            "unselected.marker.opacity": 0.4
+            "unselected.marker.opacity": 0.5
           };
           updaters.push(Plotly.restyle(R.els.chartPanel, update, [i]));
         }
@@ -472,8 +473,7 @@
       const trs = smiles.map(s => `<tr><td colspan="2">${SmilesRenderer.smilesSVG(s, R.config.structure.width, R.config.structure.height)}</td></tr>`);
       const text = assembleHoverText(row);
       const parts = text.split('<br>');
-      let title = parts[0].replace('<b>', '<span>').replace('</b>', '</span>')
-      title = title.replace(' [', '<button type="button" class="btn btn-outline-success rounded-pill btn-sm py-0 copies">').replace(']', '</button>')
+      const title = assembleCompoundName(row, true, true)
       for (let i=1; i < parts.length; i++) {
         let [k, v] = parts[i].split(': ');
         trs.push(`<tr><td class="text-start">${k}</td><td class="text-end">${v}</td></tr>`);
@@ -571,11 +571,10 @@
     };
     const assembleCompoundName = (row, addCopyNumber=false, addButton=false) => {
       let compound = row.compound ? row.compound : `VC${row.index}`;
-      if (row.copies > 1 && addCopyNumber) {
+      if (row.copies >= 1 && addCopyNumber) {
         if (addButton) {
-          const key = `${row.library}|` + R.smilesColumns.map(s => row[s]).join('|')
           const button = ' <button type="button" class="btn btn-outline-success rounded-pill btn-sm py-0" ' +
-                                'data-action="open-encoding" data-encoding-key="${key}">${row.copies}</button>';
+                                `data-action="open-encoding" data-encoding-key="${row.key}">${row.copies}</button>`;
           compound += button
         } else {
           compound += ` [${row.copies}]`
@@ -596,7 +595,7 @@
       return text
     };
     const assembleHoverText = (row) => {
-      let text = [`<b>${assembleCompoundName(row)}</b>`];
+      let text = [`<b>${assembleCompoundName(row, true)}</b>`];
       text.push(...assembleCountScore(row));
       return text.join('<br>')
     };
@@ -641,13 +640,13 @@
       }
       return columns
     };
-    const tabulize = (el, data, columns, modal) => {
+    const tabulize = (el, data, columns, layout='fitDataFill') => {
       el.innerHTML = '';
       return  new Tabulator(el, {
         data: data,
         columns: columns,
         index: 'key',
-        layout: 'fitDataFill',
+        layout: layout,
         height: '100%',
         nestedFieldSeparator: "->",
         columnDefaults: { hozAlign: "center",  vertAlign: "middle", headerHozAlign: "center" },
@@ -663,7 +662,7 @@
       }
     }
 
-    return { findColumns, assembleCompoundCard, assembleCompoundName,
+    return { findColumns, assembleCompoundCard, assembleCompoundName, getSMILES,
              assembleKV, assembleCountScore, assembleHoverText, alignModebarWithLegend,
              buildColumns, keyForRow, tabulize, updateHitsCount, viewCompounds, hideCompounds
            };
@@ -749,12 +748,11 @@
   function handleChartEvent(gd) {
     if (R.library !== 'All') {
       R.utilities.alignModebarWithLegend();
-      console.log('aligned modebar')
-      // gd.removeAllListeners?.('plotly_click');
+
+      gd.removeAllListeners?.('plotly_click');
       gd.on('plotly_click', ev => {
         const id = ev.points[0].id;
-        // q(id) ? R.utilities.hideCompounds([id]) : R.utilities.viewCompounds([id])
-        R.utilities.viewCompounds([id])
+        (id in R.cards) ? R.utilities.hideCompounds([id]) : R.utilities.viewCompounds([id]);
       });
     }
   }
@@ -910,7 +908,7 @@
       },
     };
     const columns = [deleteCol, ...R.utilities.buildColumns()]
-    R.hitsTable = R.utilities.tabulize(R.els.hitsTable, R.hits, columns, R.els.hitsModal);
+    R.hitsTable = R.utilities.tabulize(R.els.hitsTable, R.hits, columns);
   }
 
   function buildTopHitsTable() {
@@ -963,7 +961,7 @@
       }
     }
     const columns = [visibleColumn, hitsColumn, ...R.utilities.buildColumns()]
-    R.topHitsTable = R.utilities.tabulize(R.els.topHitsTable, tops, columns, R.els.topHitsModal);
+    R.topHitsTable = R.utilities.tabulize(R.els.topHitsTable, tops, columns);
   }
 
   function analyzeData() {
@@ -976,17 +974,17 @@
       return Number.isFinite(n) ? n : -Infinity; // treat missing/NaN as worst
     };
 
-    R.rows.forEach((row, i) => {
+    R.rows.forEach((row) => {
       const k = String(row?.key ?? "");
       if (!groups.has(k)) groups.set(k, []);
-      groups.get(k).push(i);
+      groups.get(k).push(row.index);
 
       groupSizeByKey.set(k, (groupSizeByKey.get(k) ?? 0) + 1);
 
       const s = norm(row?.[R.x]);
       const prev = bestByKey.get(k);
       if (!prev || s > prev.score /* tie: keep first seen */) {
-        bestByKey.set(k, { idx: i, score: s });
+        bestByKey.set(k, { idx: row.index, score: s });
       }
     });
 
@@ -1054,6 +1052,8 @@
       bootstrap.Modal.getInstance(R.els.configModal)?.show();
     });
 
+    handleChartEvent(R.els.chartPanel);
+
     // const updateConnectors = () => {
     //   document.querySelectorAll('.compound-card').forEach(card => {
     //     card.line ? R.utilities.updateConnector(card) : R.utilities.attachConnector(card);
@@ -1074,9 +1074,47 @@
     //   q(id) ? R.utilities.hideCompounds([id]) : R.utilities.viewCompounds([id])
     // });
 
-    // R.els.btnEqualAxis.addEventListener('click', () => {
-    //   squareChart();
-    // })
+    R.els.btnEqualAxis.addEventListener('click', () => {
+      squareChart();
+    })
+
+    document.addEventListener('click', (e) => {
+      const btn = e.target.closest('button');
+      if (!btn) return;
+
+      const action = btn.getAttribute('data-action'); // or btn.dataset.action
+      switch (action) {
+        case 'open-encoding': {
+          const key = btn.getAttribute('data-encoding-key');
+          const row = R.uniques.filter(r => r.key === key)[0];
+          let smiles = R.utilities.getSMILES(row);
+          smiles.push(smiles.shift());
+          const cards = smiles.map(s => `<div class="col"><div class="card p-2">
+            ${SmilesRenderer.smilesSVG(s, R.config.structure.width, R.config.structure.height)}</div></div>`);
+          R.els.encodingSMILES.innerHTML = cards.join('\n');
+          SmilesRenderer.drawSMILES(R.els.encodingSMILES);
+
+          const ids = R.duplicates[key];
+          const rows = R.rows.filter(r => ids.includes(r.index));
+          const excludes = ['SMILES', 'Library', 'Axis', 'Encodings']
+          const columns = R.utilities.buildColumns().filter(x => !excludes.includes(x.title));
+          R.utilities.tabulize(R.els.encodingTable, rows, columns, 'fitDataTable');
+          const modal = bootstrap.Modal.getOrCreateInstance(R.els.encodingModal, {
+            backdrop: true,
+            keyboard: true,
+            focus: true
+          });
+          modal.show();
+          break;
+        }
+        case 'copy': {
+          const smiles = ctx.card.querySelector('.smiles-svg')?.dataset.smiles || '';
+          if (smiles) navigator.clipboard?.writeText(smiles).catch(console.warn);
+          break;
+        }
+      }
+
+    });
   }
 
   function initializePage(rows) {
@@ -1102,10 +1140,8 @@
     async init(input=null) {
       GlobalConfig();
 
-      if (opts.data) {
-        R.io.loadData(opts.data, { onComplete: preparePage }).catch(console.error);
-      } else if (opts.url) {
-        await R.io.loadFile(opts.url, { onComplete: preparePage }).catch(console.error);
+      if (input) {
+        R.io.load(input, { onComplete: initializePage }).catch(console.error);
       } else {
         R.els.uploadPanel.classList.remove('d-none')
       }
