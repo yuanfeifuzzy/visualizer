@@ -161,7 +161,6 @@
       try {
         let rows;
         let download = false;
-        console.log(input)
         if (typeof input === "string") {
           if (/\.gz$/i.test(input)) {
             const res = await fetch(input, { mode: "cors" });
@@ -221,7 +220,7 @@
       }
         return [String(row.library ?? ''), ...R.smilesColumns.map(c => String(row?.[c] ?? ''))].join('|');
     };
-    const getSMILES = (row) => Object.entries(R.config.render) .filter(([k, v]) => v).map(([k]) => row?.[k] ?? '');
+    const getSMILES = (row) => Object.entries(R.config.render).filter(([k, v]) => v).map(([k]) => row?.[k] ?? '');
     function ClientXY(id) {
       const gd = R.els.chartPanel;
       const data = gd._fullData || gd.data || [];
@@ -287,19 +286,13 @@
     };
     function updateConnector(card) {
       let x1, y1, x2, y2, left, top;
-      console.log('card state: ', card.state)
       const rect = card.getBoundingClientRect();
       if (card?.state) {
-        // ({left, top, x1, y1, x2, y2} = card.state);
         ({left, top} = card.state);
       } else {
-
-        console.log('card rect: ', rect)
         left = rect.left;
         top = rect.top;
-
       }
-
       ({ x1, y1 } = ClientXY(card.getAttribute('id')));
       x2 = rect.left + rect.width / 2;
       y2 = rect.bottom;
@@ -338,51 +331,11 @@
         card.line = null;
       }
     }
-    function removeCompoundCards(ids=null, cards=null) {
-      let cs;
-      if (ids) {
-        cs = ids.map(id => q(id));
-      } else {
-        if (cards) {
-          cs = cards
-        } else {
-          cs = document.querySelectorAll('.compound-card');
-        }
-      }
-      cs.forEach(card => {
-        removeConnector(card);
-        card.remove();
-      })
-
-    }
     function getVisibleHits() {
       const rows = t => (Array.isArray(t?.getData?.()) ? t.getData() : []);
       return [...rows(R.hitsTable).filter(r => r.library === R.library),
               ...rows(R.topHitsTable).filter(r => (r.library === R.library) && (r.visible))];
     }
-    function whenCardStable(card, done) {
-      function afterFonts(kick) {
-        if (document.fonts && document.fonts.status !== 'loaded') {
-          document.fonts.ready.then(kick, kick);
-        } else { kick(); }
-      }
-      function doubleRAF(cb) {
-        requestAnimationFrame(function(){ requestAnimationFrame(cb); });
-      }
-      afterFonts(function(){
-        doubleRAF(function(){
-          var lastH = -1, stable = 0, tries = 0;
-          (function tick(){
-            var h = Math.round(card.getBoundingClientRect().height);
-            if (h === lastH) stable++; else { stable = 0; lastH = h; }
-            if (stable >= 1 || tries > 12) { done(); return; } // ~200ms cap
-            tries++;
-            requestAnimationFrame(tick);
-          })();
-        });
-      });
-    }
-
     function viewCompounds(ids = null) {
       let visibles = new Set(getVisibleHits().map(r => r.key));
       if (ids) visibles = visibles.union(new Set(ids));
@@ -406,7 +359,6 @@
           let card = R.cards[key];
           if (!card) {
             card = assembleCompoundCard(R.uniques.filter(r => r.key === key)[0]);
-            console.log('card rect after restyle: ', card.getBoundingClientRect())
             R.cards[key] = card
           } else {
             card.classList.remove('d-none');
@@ -479,9 +431,10 @@
         trs.push(`<tr><td class="text-start">${k}</td><td class="text-end">${v}</td></tr>`);
       }
 
+      const key = row.key;
       let card = document.createElement('div');
       const width = R.config.structure.width + 10;
-      card.setAttribute('id', row.key)
+      card.setAttribute('id', key)
       card.className = 'card compound-card';
       card.style.position = 'fixed';
       card.style.width = `${width}px`;
@@ -500,11 +453,10 @@
 
       const footer = document.createElement('div');
       footer.className = 'card-footer bg-white d-flex align-items-center p-1';
-      footer.innerHTML = '<i class="bi bi-bag me-3" data-action="bag" role="button" tabindex="0" title="Add to' +
-        ' bag"></i> ' +
-        '<i class="bi bi-copy text-success me-3" data-action="copy" role="button" tabindex="0" title="Copy"></i> ' +
-        '<i class="bi bi-envelope text-primary" data-action="email" role="button" tabindex="0" title="E-mail"></i> ' +
-        '<i class="bi bi-x-circle ms-auto text-danger" data-action="close" role="button" tabindex="0" title="Close"></i>';
+      footer.innerHTML = `<i class="bi bi-bag me-3" data-action="bag" data-key=${key} role="button" tabindex="0" title="Add to candidate"></i> ` +
+        `<i class="bi bi-copy text-success me-3" data-action="copy" data-key=${key} role="button" tabindex="0" title="Copy"></i> ` +
+        `<i class="bi bi-envelope text-primary" data-action="email" data-key=${key} role="button" tabindex="0" title="E-mail"></i> ` +
+        `<i class="bi bi-x-circle ms-auto text-danger" data-action="close" data-key=${key} role="button" tabindex="0" title="Close"></i>`;
       card.appendChild(footer);
 
       card.style.display = 'block';
@@ -534,38 +486,38 @@
       requestAnimationFrame(function(){ updateConnector(card); });
       Draggable(card, header);
 
-      card.addEventListener('click', (e) => {
-        const btn = e.target.closest('button.copies');
-        if (!btn) return;
-        const key = btn.dataset.key;
-        window.alert('copies clicked:', key, btn.textContent.trim());
-      });
-
-      footer.addEventListener('click', (e) => {
-        const icon = e.target.closest('[data-action]');
-        if (!icon) return;
-        handleFooterAction(icon.dataset.action, { card, footer });
-      });
-
-      function handleFooterAction(action, ctx) {
-        switch (action) {
-          case 'bag':
-            break;
-          case 'copy': {
-            const smiles = ctx.card.querySelector('.smiles-svg')?.dataset.smiles || '';
-            if (smiles) navigator.clipboard?.writeText(smiles).catch(console.warn);
-            break;
-          }
-          case 'email':
-            const subject = encodeURIComponent('Compound info');
-            const body = encodeURIComponent('See attached details.');
-            window.location.href = `mailto:?subject=${subject}&body=${body}`;
-            break;
-          case 'close':
-            hideCompounds([ctx.card.getAttribute('id')])
-            break;
-        }
-      }
+      // card.addEventListener('click', (e) => {
+      //   const btn = e.target.closest('button.copies');
+      //   if (!btn) return;
+      //   const key = btn.dataset.key;
+      //   window.alert('copies clicked:', key, btn.textContent.trim());
+      // });
+      //
+      // footer.addEventListener('click', (e) => {
+      //   const icon = e.target.closest('[data-action]');
+      //   if (!icon) return;
+      //   handleFooterAction(icon.dataset.action, { card, footer });
+      // });
+      //
+      // function handleFooterAction(action, ctx) {
+      //   switch (action) {
+      //     case 'bag':
+      //       break;
+      //     case 'copy': {
+      //       const smiles = ctx.card.querySelector('.smiles-svg')?.dataset.smiles || '';
+      //       if (smiles) navigator.clipboard?.writeText(smiles).catch(console.warn);
+      //       break;
+      //     }
+      //     case 'email':
+      //       const subject = encodeURIComponent('Compound info');
+      //       const body = encodeURIComponent('See attached details.');
+      //       window.location.href = `mailto:?subject=${subject}&body=${body}`;
+      //       break;
+      //     case 'close':
+      //       hideCompounds([ctx.card.getAttribute('id')])
+      //       break;
+      //   }
+      // }
 
       return card
     };
@@ -574,7 +526,7 @@
       if (row.copies >= 1 && addCopyNumber) {
         if (addButton) {
           const button = ' <button type="button" class="btn btn-outline-success rounded-pill btn-sm py-0" ' +
-                                `data-action="open-encoding" data-encoding-key="${row.key}">${row.copies}</button>`;
+                                `data-action="open-encoding" data-key="${row.key}">${row.copies}</button>`;
           compound += button
         } else {
           compound += ` [${row.copies}]`
@@ -584,7 +536,6 @@
     };
     const assembleKV = (k, v, tabulate=false) => { return tabulate ? `<tr><td>${k}</td><td>${v}</td></tr>` : `${k}: ${v}`};
     const assembleCountScore = (row, tabulate=false) => {
-      console.log(row)
       let text = [];
       text.push(assembleKV(`<b>${R.x.replace('zscore_', '')} (x)`, `${row[R.x.replace('zscore_', 'count_')]} (${row[R.x].toFixed(2)})</b>`, tabulate));
       text.push(assembleKV(`<b>${R.y.replace('zscore_', '')} (y)`, `${row[R.y.replace('zscore_', 'count_')]} (${row[R.y].toFixed(2)})</b>`, tabulate));
@@ -599,6 +550,20 @@
       text.push(...assembleCountScore(row));
       return text.join('<br>')
     };
+    const assemblePlainText = (row) => {
+      let smiles = Object.entries(R.config.render).map(([k, v]) => `${k}: ${row?.[k] ?? ''}`);
+      let ss = [`Compound: ${assembleCompoundName(row)}`, ...smiles]
+      const parts = assembleHoverText(row).split('<br>');
+      const tags = ['<b>', '</b>', ' (x)', ' (y)'];
+      for (let i=1; i < parts.length; i++) {
+        let s = parts[i];
+        for (const tag of tags) {
+          s = s.replace(tag, '');
+        }
+        ss.push(s)
+      }
+      return ss.join('\n')
+    }
     const alignModebarWithLegend = () => {
       const mb  = R.els.chartPanel.querySelector('.modebar');
       const leg = R.els.chartPanel.querySelector('.legend');
@@ -662,7 +627,7 @@
       }
     }
 
-    return { findColumns, assembleCompoundCard, assembleCompoundName, getSMILES,
+    return { findColumns, assembleCompoundCard, assembleCompoundName, getSMILES, assemblePlainText,
              assembleKV, assembleCountScore, assembleHoverText, alignModebarWithLegend,
              buildColumns, keyForRow, tabulize, updateHitsCount, viewCompounds, hideCompounds
            };
@@ -900,11 +865,19 @@
         const btn = e.target.closest('button[data-action="del"]');
         if (!btn) return;
         e.preventDefault(); e.stopPropagation();
-        cell.getRow().delete();
+        const row = cell.getRow();
+        // const key = row.id;
+        row.delete();
         R.utilities.updateHitsCount(R.hitsTable.getData().length);
         const data = cell.getRow().getData();
         data.hits = false;
         R.topHitsTable.updateData([data]);
+        // const icons = document.querySelector(`[data-key="${key}"]`);
+        // icons.forEach(icon => {
+        //   icon.classList.remove('bi-bag-fill');
+        //   icon.classList.remove('text-danger');
+        //   icon.classList.add('bi-bag');
+        // })
       },
     };
     const columns = [deleteCol, ...R.utilities.buildColumns()]
@@ -1054,39 +1027,21 @@
 
     handleChartEvent(R.els.chartPanel);
 
-    // const updateConnectors = () => {
-    //   document.querySelectorAll('.compound-card').forEach(card => {
-    //     card.line ? R.utilities.updateConnector(card) : R.utilities.attachConnector(card);
-    //   });
-    // }
-    // R.els.chartPanel.on('plotly_relayout', () => {
-    //   R.utilities.alignModebarWithLegend();
-    //   updateConnectors();
-    // });
-    // window.addEventListener('resize', () => {
-    //   R.utilities.alignModebarWithLegend();
-    //   updateConnectors();
-    // });
-
-    // if (R.els.chartPanel.removeAllListeners) R.els.chartPanel.removeAllListeners('plotly_click');
-    // R.els.chartPanel.on('plotly_click', (data) => {
-    //   const id = data.points[0].id;
-    //   q(id) ? R.utilities.hideCompounds([id]) : R.utilities.viewCompounds([id])
-    // });
-
     R.els.btnEqualAxis.addEventListener('click', () => {
       squareChart();
     })
 
     document.addEventListener('click', (e) => {
-      const btn = e.target.closest('button');
+      const btn = e.target.closest('[data-action]');
       if (!btn) return;
 
-      const action = btn.getAttribute('data-action'); // or btn.dataset.action
+      const action = btn.getAttribute('data-action');
+      const key = btn.getAttribute('data-key');
+      let row = R.rows.filter(r => r.key === key)[0];
+      console.log(row);
+
       switch (action) {
         case 'open-encoding': {
-          const key = btn.getAttribute('data-encoding-key');
-          const row = R.uniques.filter(r => r.key === key)[0];
           let smiles = R.utilities.getSMILES(row);
           smiles.push(smiles.shift());
           const cards = smiles.map(s => `<div class="col"><div class="card p-2">
@@ -1107,11 +1062,38 @@
           modal.show();
           break;
         }
-        case 'copy': {
-          const smiles = ctx.card.querySelector('.smiles-svg')?.dataset.smiles || '';
-          if (smiles) navigator.clipboard?.writeText(smiles).catch(console.warn);
+        case 'bag': {
+          if (btn.classList.contains('bi-bag-fill')) {
+            row.visible = false;
+            R.hitsTable.deleteRow(key);
+            R.utilities.updateHitsCount(R.hitsTable.getData().length);
+            btn.classList.remove('bi-bag-fill');
+            btn.classList.remove('text-danger');
+            btn.classList.add('bi-bag');
+          } else {
+            row.visible = true;
+            R.hitsTable.updateOrAddRow(key, row);
+            R.utilities.updateHitsCount(R.hitsTable.getData().length);
+            btn.classList.remove('bi-bag');
+            btn.classList.add('bi-bag-fill');
+            btn.classList.add('text-danger');
+          }
           break;
         }
+        case 'copy': {
+          const text = R.utilities.assemblePlainText(row);
+          navigator.clipboard?.writeText(text).catch(console.warn);
+          break;
+        }
+        case 'email':
+          const text = R.utilities.assemblePlainText(row);
+          const subject = encodeURIComponent('Compound info');
+          const body = encodeURIComponent(text);
+          window.location.href = `mailto:?subject=${subject}&body=${body}`;
+          break;
+        case 'close':
+          R.utilities.hideCompounds([key])
+          break;
       }
 
     });
