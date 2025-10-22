@@ -218,7 +218,7 @@
       if (Object.prototype.hasOwnProperty.call(row, 'compound') && row.compound != null && row.compound !== '') {
         return String(row.compound);
       }
-        return [String(row.library ?? ''), ...R.smilesColumns.map(c => String(row?.[c] ?? ''))].join('|');
+        return [String(row.library ?? ''), ...R.smilesColumns.map(c => String(row?.[c] ?? ''))].join('|').replace(' ', '_');
     };
     const getSMILES = (row) => Object.entries(R.config.render).filter(([k, v]) => v).map(([k]) => row?.[k] ?? '');
     function ClientXY(id) {
@@ -346,12 +346,10 @@
         R.topHitsTable.updateOrAddRow(row.key, row);
       }
 
-      // Highlight points and wait until Plotly is actually re-drawn
       const gd = R.els.chartPanel;
       const after = new Promise(res => gd.once ? gd.once('plotly_afterplot', res) : res());
       restylePoints(null, Array.from(visibles), 'replace');
 
-      // Build/append cards only after plot is stable
       after.then(() => {
         const cards = [];
         for (const row of rows) {
@@ -367,7 +365,6 @@
           R.cards[key] = card;
         }
 
-        // Ensure connectors are correct after the DOM paints
         for (const card of cards) {
           card.line ? updateConnector(card) : attachConnector(card);
         }
@@ -384,6 +381,13 @@
         card.classList.add('d-none');
       }
       restylePoints(null, ids, 'remove');
+      const rows = R.uniques.filter(row => ids.includes(row.key));
+      for (const row of R.topHitsTable.getRows()) {
+        const data = row.getData();
+        if (ids.includes(data.key)) {
+          row.update({visible: false});
+        }
+      }
     }
     function restylePoints(rows=null, ids=null, mode='add') {
       const uids = ids || rows?.map(row => row.key);
@@ -486,44 +490,11 @@
       requestAnimationFrame(function(){ updateConnector(card); });
       Draggable(card, header);
 
-      // card.addEventListener('click', (e) => {
-      //   const btn = e.target.closest('button.copies');
-      //   if (!btn) return;
-      //   const key = btn.dataset.key;
-      //   window.alert('copies clicked:', key, btn.textContent.trim());
-      // });
-      //
-      // footer.addEventListener('click', (e) => {
-      //   const icon = e.target.closest('[data-action]');
-      //   if (!icon) return;
-      //   handleFooterAction(icon.dataset.action, { card, footer });
-      // });
-      //
-      // function handleFooterAction(action, ctx) {
-      //   switch (action) {
-      //     case 'bag':
-      //       break;
-      //     case 'copy': {
-      //       const smiles = ctx.card.querySelector('.smiles-svg')?.dataset.smiles || '';
-      //       if (smiles) navigator.clipboard?.writeText(smiles).catch(console.warn);
-      //       break;
-      //     }
-      //     case 'email':
-      //       const subject = encodeURIComponent('Compound info');
-      //       const body = encodeURIComponent('See attached details.');
-      //       window.location.href = `mailto:?subject=${subject}&body=${body}`;
-      //       break;
-      //     case 'close':
-      //       hideCompounds([ctx.card.getAttribute('id')])
-      //       break;
-      //   }
-      // }
-
       return card
     };
     const assembleCompoundName = (row, addCopyNumber=false, addButton=false) => {
       let compound = row.compound ? row.compound : `VC${row.index}`;
-      if (row.copies >= 1 && addCopyNumber) {
+      if (row.copies > 1 && addCopyNumber) {
         if (addButton) {
           const button = ' <button type="button" class="btn btn-outline-success rounded-pill btn-sm py-0" ' +
                                 `data-action="open-encoding" data-key="${row.key}">${row.copies}</button>`;
@@ -575,7 +546,7 @@
       mb.style.top = top + 'px';
     };
     const buildColumns = () => {
-      const smiles = {title: 'SMILES', columns: [], hozAlign: 'center'}
+      const smiles = {title: 'Structure', columns: [], hozAlign: 'center'}
       for (const c of R.smilesColumns) {
         smiles.columns.push({
           title: c.includes('_') ? c.split('_')[0].replace('c', 'BB') : c,
@@ -593,10 +564,10 @@
       const scores = {title: 'z-score', columns: []};
       for (const c of R.scoreColumns) {scores.columns.push({title: c.replace('zscore_', ''), field: c})}
       const columns = [
-        {title: 'Library', field: 'library', frozen: true},
-        {title: 'Axis', field: 'axis', frozen: true},
-        smiles,
+        {title: 'Library', field: 'library'},
+        {title: 'Axis', field: 'axis'},
         {title: 'Encodings', field: 'copies'},
+        smiles,
         counts, scores
       ]
 
@@ -617,7 +588,8 @@
         columnDefaults: { hozAlign: "center",  vertAlign: "middle", headerHozAlign: "center" },
       });
     };
-    const updateHitsCount = (n) => {
+    const updateHitsCount = () => {
+      const n = R.hitsTable.getData().length;
       if (n > 0) {
         R.els.btnHitsModal.classList.remove('disabled');
         R.els.numHits.innerText = n;
@@ -713,12 +685,19 @@
   function handleChartEvent(gd) {
     if (R.library !== 'All') {
       R.utilities.alignModebarWithLegend();
+      R.els.btnEqualAxis.classList.remove('disabled')
 
       gd.removeAllListeners?.('plotly_click');
       gd.on('plotly_click', ev => {
         const id = ev.points[0].id;
-        (id in R.cards) ? R.utilities.hideCompounds([id]) : R.utilities.viewCompounds([id]);
+        if (id in R.cards) {
+          R.cards[id].classList.contains('d-none') ? R.utilities.viewCompounds([id]) : R.utilities.hideCompounds([id]);
+        } else {
+          R.utilities.viewCompounds([id]);
+        }
       });
+    } else {
+      R.els.btnEqualAxis.classList.add('disabled')
     }
   }
 
@@ -864,20 +843,20 @@
       cellClick: (e, cell) => {
         const btn = e.target.closest('button[data-action="del"]');
         if (!btn) return;
-        e.preventDefault(); e.stopPropagation();
+        e.preventDefault();
+        e.stopPropagation();
         const row = cell.getRow();
-        // const key = row.id;
         row.delete();
-        R.utilities.updateHitsCount(R.hitsTable.getData().length);
+        R.utilities.updateHitsCount();
         const data = cell.getRow().getData();
         data.hits = false;
         R.topHitsTable.updateData([data]);
-        // const icons = document.querySelector(`[data-key="${key}"]`);
-        // icons.forEach(icon => {
-        //   icon.classList.remove('bi-bag-fill');
-        //   icon.classList.remove('text-danger');
-        //   icon.classList.add('bi-bag');
-        // })
+        const key = row.getData().key;
+        const icons = document.querySelectorAll(`[data-action="bag"][data-key="${key}"]`);
+        Array.from(icons).forEach(icon => {
+          icon.classList.replace('bi-bag-fill', 'bi-bag');
+          icon.classList.remove('text-danger');
+        })
       },
     };
     const columns = [deleteCol, ...R.utilities.buildColumns()]
@@ -900,27 +879,23 @@
         return `<input type="checkbox" aria-label="visible row"${v ? " checked" : ""}>`;
       },
 
-      // Toggle the underlying data when the cell is clicked
       cellClick: (e, cell) => {
-        // Only toggle when clicking the checkbox (not column resize area etc.)
         if ((e.target instanceof HTMLElement) && e.target.tagName === "INPUT") {
           cell.setValue(e.target.checked, true);   // true = mutate data
         } else {
-          // click anywhere in the cell toggles the checkbox
           cell.setValue(!toBool(cell.getValue()), true);
           const input = cell.getElement().querySelector('input[type="checkbox"]');
           if (input) input.checked = toBool(cell.getValue());
         }
+        const key = cell.getRow().getData().key;
+        cell.getValue() ? R.utilities.viewCompounds([key]): R.utilities.hideCompounds([key]);
       },
 
-      // Header click: toggle all on/off
       headerClick: (e, column) => {
         const table = column.getTable();
         const def = column.getDefinition();
-        const turnOn = !def._allChecked;           // simple flip-flop flag
+        const turnOn = !def._allChecked;
         def._allChecked = turnOn;
-
-        // Efficient bulk update
         table.getRows().forEach(row => row.update({ selected: turnOn }));
       },
   };
@@ -930,7 +905,7 @@
         const data = cell.getRow().getData();
         const table = R.hitsTable;
         cell.getValue() ? table.updateOrAddRow(data.key, data) : table.deleteRow(data.key);
-        R.utilities.updateHitsCount(table.getData().length);
+        R.utilities.updateHitsCount();
       }
     }
     const columns = [visibleColumn, hitsColumn, ...R.utilities.buildColumns()]
@@ -1031,14 +1006,43 @@
       squareChart();
     })
 
+    const clamp = (v, min, max) => Math.max(min, Math.min(max, v));
+    function showToastAbove(target, { message = 'Done!', delay = 3000, offsetY = 8} = {}) {
+      const toastEl = document.createElement('div');
+      toastEl.className = 'toast shadow';
+      toastEl.setAttribute('role', 'status');
+      toastEl.setAttribute('aria-live', 'polite');
+      toastEl.setAttribute('aria-atomic', 'true');
+      toastEl.style.position = 'absolute';
+      toastEl.style.zIndex = 2000;
+      toastEl.style.visibility = 'hidden';
+      toastEl.innerHTML = `<div class="toast-body py-2 px-3">${message}</div>`;
+      document.body.appendChild(toastEl);
+
+      const rect = target.getBoundingClientRect();
+      const { scrollX, scrollY, innerWidth } = window;
+      const tw = toastEl.offsetWidth;
+      const th = toastEl.offsetHeight;
+      let left = rect.left + rect.width / 2 - tw / 2 + scrollX;
+      left = clamp(left, 8 + scrollX, innerWidth - tw - 8 + scrollX);
+      const top = rect.top + scrollY - th - offsetY;
+
+      toastEl.style.left = `${left}px`;
+      toastEl.style.top  = `${Math.max(8 + scrollY, top)}px`;
+      toastEl.style.visibility = 'visible';
+
+      const toast = bootstrap.Toast.getOrCreateInstance(toastEl, {autohide: true, delay});
+      toastEl.addEventListener('hidden.bs.toast', () => toastEl.remove());
+      toast.show();
+    }
+
     document.addEventListener('click', (e) => {
       const btn = e.target.closest('[data-action]');
       if (!btn) return;
 
       const action = btn.getAttribute('data-action');
       const key = btn.getAttribute('data-key');
-      let row = R.rows.filter(r => r.key === key)[0];
-      console.log(row);
+      let row = R.uniques.filter(r => r.key === key)[0];
 
       switch (action) {
         case 'open-encoding': {
@@ -1064,25 +1068,22 @@
         }
         case 'bag': {
           if (btn.classList.contains('bi-bag-fill')) {
-            row.visible = false;
             R.hitsTable.deleteRow(key);
-            R.utilities.updateHitsCount(R.hitsTable.getData().length);
-            btn.classList.remove('bi-bag-fill');
+            btn.classList.replace('bi-bag-fill', 'bi-bag');
             btn.classList.remove('text-danger');
-            btn.classList.add('bi-bag');
           } else {
-            row.visible = true;
             R.hitsTable.updateOrAddRow(key, row);
-            R.utilities.updateHitsCount(R.hitsTable.getData().length);
             btn.classList.remove('bi-bag');
             btn.classList.add('bi-bag-fill');
             btn.classList.add('text-danger');
           }
+          R.utilities.updateHitsCount();
           break;
         }
         case 'copy': {
           const text = R.utilities.assemblePlainText(row);
           navigator.clipboard?.writeText(text).catch(console.warn);
+          showToastAbove(btn, { message: 'Compound info copied!'});
           break;
         }
         case 'email':
@@ -1104,7 +1105,7 @@
     R.columns = columns;
     R.countColumns = R.utilities.findColumns(columns, 'count_')
     R.scoreColumns = R.utilities.findColumns(columns, 'zscore_')
-    R.smilesColumns = R.utilities.findColumns(columns, '', '_smiles')
+    R.smilesColumns = R.utilities.findColumns(columns, '', 'smiles')
     R.libraries = [...new Set((rows ?? []).map(r => r.library))];
     R.rows = rows.map(row => (row.key = R.utilities.keyForRow(row), row));
 
