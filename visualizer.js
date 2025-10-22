@@ -19,12 +19,13 @@
     countColumns: [],
     scoreColumns: [],
     smilesColumns: [],
-    hits: [],
-    tops: [],
+    hits: new Map(),
+    tops: new Map(),
     uniques: [],
     duplicates: {},
     x: null,
     y: null,
+    vs: null,
     library: null,
     hitsTable: null,
     topHitsTable: null,
@@ -107,30 +108,32 @@
   }
 
   R.els = {
-    btnHitsModal  : q('btnHitsModal'),
-    btnEqualAxis  : q('btnEqualAxis'),
-    switchers     : q('switchers'),
-    selectors     : q('selectors'),
-    btnX          : q('btnX'),
-    xSel          : q('xSel'),
-    btnLibrary    : q('btnLibrary'),
-    librarySel    : q('librarySel'),
-    btnY          : q('btnY'),
-    ySel          : q('ySel'),
-    uploadPanel   : q('uploadPanel'),
-    fileInput     : q('fileInput'),
-    dz            : q('dropzone'),
-    chartPanel    : q('chartPanel'),
-    configModal   : q('configModal'),
-    btnSaveConfig : q('btnSaveConfig'),
-    encodingModal : q('encodingModal'),
-    encodingTable : q('encodingTable'),
-    encodingSMILES: q('encodingSMILES'),
-    topHitsModal  : q('topHitsModal'),
-    hitsModal     : q('hitsModal'),
-    hitsTable     : q('hitsTable'),
-    numHits       : q('numHits'),
-    topHitsTable  : q('topHitsTable')
+    btnHitsModal         : q('btnHitsModal'),
+    btnTopHitsModal      : q('btnTopHitsModal'),
+    btnEqualAxis         : q('btnEqualAxis'),
+    switchers            : q('switchers'),
+    selectors            : q('selectors'),
+    btnX                 : q('btnX'),
+    xSel                 : q('xSel'),
+    btnLibrary           : q('btnLibrary'),
+    librarySel           : q('librarySel'),
+    btnY                 : q('btnY'),
+    ySel                 : q('ySel'),
+    uploadPanel          : q('uploadPanel'),
+    fileInput            : q('fileInput'),
+    dz                   : q('dropzone'),
+    chartPanel           : q('chartPanel'),
+    configModal          : q('configModal'),
+    btnSaveConfig        : q('btnSaveConfig'),
+    encodingModal        : q('encodingModal'),
+    encodingTable        : q('encodingTable'),
+    encodingSMILES       : q('encodingSMILES'),
+    topHitsModal         : q('topHitsModal'),
+    hitsModal            : q('hitsModal'),
+    hitsTable            : q('hitsTable'),
+    numHits              : q('numHits'),
+    numTopHits           : q('numTopHits'),
+    topHitsTable         : q('topHitsTable')
   }
 
   R.io = (() => {
@@ -334,59 +337,83 @@
     function getVisibleHits() {
       const rows = t => (Array.isArray(t?.getData?.()) ? t.getData() : []);
       return [...rows(R.hitsTable).filter(r => r.library === R.library),
-              ...rows(R.topHitsTable).filter(r => (r.library === R.library) && (r.visible))];
+              ...rows(R.topHitsTable).filter(r => r.library === R.library)];
     }
     function viewCompounds(ids = null) {
       let visibles = new Set(getVisibleHits().map(r => r.key));
       if (ids) visibles = visibles.union(new Set(ids));
       const rows = R.uniques.filter(row => visibles.has(row.key));
 
-      for (const row of rows) {
-        row.visible = true;
-        R.topHitsTable.updateOrAddRow(row.key, row);
+      if (rows.length > 0) {
+        console.log('updating rows: ', rows)
+        R.topHitsTable.updateOrAddData(rows).then(function (rows) {
+          updateHitsCount(R.topHitsTable, R.els.btnTopHitsModal, R.els.numTopHits);
+          R.tops[R.vs] = R.topHitsTable.getData();
+        })
+
+        const gd = R.els.chartPanel;
+        const after = new Promise(res => gd.once ? gd.once('plotly_afterplot', res) : res());
+        restylePoints(null, Array.from(visibles), 'replace');
+
+        after.then(() => {
+          const cards = [];
+          for (const row of rows) {
+            const key = row.key;
+            let card = R.cards[key];
+            if (!card) {
+              card = assembleCompoundCard(R.uniques.filter(r => r.key === key)[0]);
+              R.cards[key] = card
+            } else {
+              card.classList.remove('d-none');
+            }
+            cards.push(card);
+            R.cards[key] = card;
+          }
+
+          for (const card of cards) {
+            card.line ? updateConnector(card) : attachConnector(card);
+          }
+        });
+
+        ids = Object.keys(R.cards).filter(key => !visibles.has(key));
+        hideCompounds(ids);
       }
 
-      const gd = R.els.chartPanel;
-      const after = new Promise(res => gd.once ? gd.once('plotly_afterplot', res) : res());
-      restylePoints(null, Array.from(visibles), 'replace');
-
-      after.then(() => {
-        const cards = [];
-        for (const row of rows) {
-          const key = row.key;
-          let card = R.cards[key];
-          if (!card) {
-            card = assembleCompoundCard(R.uniques.filter(r => r.key === key)[0]);
-            R.cards[key] = card
-          } else {
-            card.classList.remove('d-none');
-          }
-          cards.push(card);
-          R.cards[key] = card;
-        }
-
-        for (const card of cards) {
-          card.line ? updateConnector(card) : attachConnector(card);
-        }
-      });
-
-      ids = Object.keys(R.cards).filter(key => !visibles.has(key));
-      hideCompounds(ids);
     }
     function hideCompounds(ids = null) {
       ids = ids || Object.keys(R.cards);
       for (const id of ids) {
         const card = R.cards[id];
-        removeConnector(card);
-        card.classList.add('d-none');
+        if (card) {
+          removeConnector(card);
+          card.classList.add('d-none');
+        }
       }
       restylePoints(null, ids, 'remove');
-      const rows = R.uniques.filter(row => ids.includes(row.key));
-      for (const row of R.topHitsTable.getRows()) {
-        const data = row.getData();
-        if (ids.includes(data.key)) {
-          row.update({visible: false});
-        }
+      // console.log('R.topHitsTable: ', R.topHitsTable)
+      // for (const row of R.topHitsTable.getRows()) {
+      //   const data = row.getData();
+      //   if (ids.includes(data.key)) {
+      //     row.update({visible: false});
+      //   }
+      // }
+    }
+    function removeCompound(id) {
+      const card = R.cards[id];
+      if (card) {
+        removeConnector(card);
+        card.remove();
+        delete R.cards[id];
+      }
+      restylePoints(null, [id], 'remove');
+      if (R.hitsTable.getRow(id)) {
+        R.hitsTable.deleteRow(id);
+        updateHitsCount(R.hitsTable, R.els.hitsModal, R.els.numHits);
+      };
+
+      if (R.topHitsTable.getRow()) {
+        R.topHitsTable.deleteRow(id);
+        updateHitsCount(R.topHitsTable, R.els.topHitsModal, R.els.numTopHits);
       }
     }
     function restylePoints(rows=null, ids=null, mode='add') {
@@ -563,13 +590,7 @@
       for (const c of R.countColumns) {counts.columns.push({title: c.replace('count_', ''), field: c})}
       const scores = {title: 'z-score', columns: []};
       for (const c of R.scoreColumns) {scores.columns.push({title: c.replace('zscore_', ''), field: c})}
-      const columns = [
-        {title: 'Library', field: 'library'},
-        {title: 'Axis', field: 'axis'},
-        {title: 'Encodings', field: 'copies'},
-        smiles,
-        counts, scores
-      ]
+      const columns = [{title: 'Library', field: 'library'}, {title: 'Encodings', field: 'copies'}, smiles, counts, scores]
 
       if (R.columns.includes('history_hits')) {
         columns.push({title: 'HH', field: 'history_hits', sorter: 'number', formatter: (cell) => cell.getValue() ? cell.getValue().split(',').length : 0})
@@ -588,20 +609,23 @@
         columnDefaults: { hozAlign: "center",  vertAlign: "middle", headerHozAlign: "center" },
       });
     };
-    const updateHitsCount = () => {
-      const n = R.hitsTable.getData().length;
+    const updateHitsCount = (table, btn, span) => {
+      const data = table.getData() || [];
+      const n = data.length;
       if (n > 0) {
-        R.els.btnHitsModal.classList.remove('disabled');
-        R.els.numHits.innerText = n;
+        btn.classList.remove('disabled');
+        span.innerText = `${n}`;
       } else {
-        R.els.btnHitsModal.classList.add('disabled');
-        R.els.numHits.innerText = '';
+        btn.classList.add('disabled');
+        span.innerText = '';
       }
+
     }
 
     return { findColumns, assembleCompoundCard, assembleCompoundName, getSMILES, assemblePlainText,
              assembleKV, assembleCountScore, assembleHoverText, alignModebarWithLegend,
-             buildColumns, keyForRow, tabulize, updateHitsCount, viewCompounds, hideCompounds
+             buildColumns, keyForRow, tabulize, updateHitsCount, getVisibleHits,
+             viewCompounds, hideCompounds, removeCompound
            };
   })();
 
@@ -640,6 +664,7 @@
     buildOptions(R.els.librarySel, ['All', ...R.libraries], 'Library', 'All', R.els.btnLibrary)
     R.els.selectors.classList.remove('d-none')
     R.els.btnEqualAxis.classList.add('disabled');
+    R.vs = `${x.replace('zscore_', '')}.vs.{${y.replace('zscore_', '')}`
   }
 
   function squareChart() {
@@ -689,9 +714,11 @@
 
       gd.removeAllListeners?.('plotly_click');
       gd.on('plotly_click', ev => {
+        const ids = R.utilities.getVisibleHits().map(r => r.key)
         const id = ev.points[0].id;
-        if (id in R.cards) {
-          R.cards[id].classList.contains('d-none') ? R.utilities.viewCompounds([id]) : R.utilities.hideCompounds([id]);
+        if (ids.includes(id)) {
+          const card = document.querySelector(`#${CSS.escape(id)}.card`)
+          card ? R.utilities.removeCompound(id) : R.utilities.viewCompounds([id]);
         } else {
           R.utilities.viewCompounds([id]);
         }
@@ -833,7 +860,13 @@
   }
 
   function buildHitsTable() {
-    const deleteCol = {
+    const data = R.hits[R.vs] || [];
+    let table = R.hitsTable;
+    if (table) {
+      table.replaceData(data);
+      R.utilities.updateHitsCount(table, R.els.btnHitsModal, R.els.numHits);
+    } else {
+      const deleteCol = {
       title: "", width: 46, hozAlign: "center", headerSort: false,
       titleFormatter: () => `<i class="bi bi-trash text-danger" aria-label="Delete row"></i>`,
       formatter: () => `<button type="button" class="btn btn-sm btn-outline-danger" 
@@ -859,57 +892,65 @@
         })
       },
     };
-    const columns = [deleteCol, ...R.utilities.buildColumns()]
-    R.hitsTable = R.utilities.tabulize(R.els.hitsTable, R.hits, columns);
+      const columns = [deleteCol, ...R.utilities.buildColumns()];
+      table = R.utilities.tabulize(R.els.hitsTable, data, columns);
+      table.on("tableBuilt", function() {R.utilities.updateHitsCount(table, R.els.btnHitsModal, R.els.numHits);});
+    }
+    R.hitsTable = table;
   }
 
   function buildTopHitsTable() {
     const hits = R.hitsTable?.getData?.() ?? [];
     const keys = hits.map(hit => hit.key);
-    const tops = Object.values(R.tops).flat().map(top => ({...top, hits: keys.includes(top.key)}));
-    const visibleColumn = {
-      title: "",
-      field: "visible",
-      width: 44,
-      headerSort: false,
-      titleFormatter: () => `<i class="bi bi-eye" aria-label="Toggle all"></i>`,
-
-      formatter: (cell) => {
-        const v = cell.getValue();
-        return `<input type="checkbox" aria-label="visible row"${v ? " checked" : ""}>`;
-      },
-
+    const tops = Object.values(R.tops[R.vs]).flat().map(top => ({...top, hits: keys.includes(top.key)}));
+    let table = R.topHitsTable;
+    if (table) {
+      table.replaceData(tops);
+      R.utilities.updateHitsCount(table, R.els.btnTopHitsModal, R.els.numTopHits);
+    } else {
+        const deleteColumn = {
+      title: "", width: 46, hozAlign: "center", headerSort: false,
+      titleFormatter: () => `<i class="bi bi-trash text-danger" aria-label="Delete row"></i>`,
+      formatter: () => `<button type="button" class="btn btn-sm btn-outline-danger" 
+                          title="Delete row" data-action="del">
+                          <i class="bi bi-trash"></i>
+                        </button>`,
       cellClick: (e, cell) => {
-        if ((e.target instanceof HTMLElement) && e.target.tagName === "INPUT") {
-          cell.setValue(e.target.checked, true);   // true = mutate data
-        } else {
-          cell.setValue(!toBool(cell.getValue()), true);
-          const input = cell.getElement().querySelector('input[type="checkbox"]');
-          if (input) input.checked = toBool(cell.getValue());
+        const btn = e.target.closest('button[data-action="del"]');
+        if (!btn) return;
+        e.preventDefault();
+        e.stopPropagation();
+        const row = cell.getRow();
+        row.delete();
+        R.utilities.updateTopHitsCount();
+        R.utilities.hideCompounds([cell.getRow().getData().key]);
+        R.tops[R.vs] = R.topHitsTable.getData();
+      },
+    };
+        const hitsColumn = { title: "Hits", field: "hits", formatter:"tickCross",
+          accessorClipboard: v => (v ? 1 : 0), accessorDownload:  v => (v ? 1 : 0),
+          cellClick: (e, cell) => {
+            const next = !Boolean(cell.getValue());
+            cell.setValue(next, true);
+            const data = cell.getRow().getData();
+            const table = R.hitsTable;
+            if (next) {
+              table.updateOrAddRow(data.key, data).then( () => {
+                R.utilities.updateHitsCount();
+                R.tops[R.vs] = table.getData();
+                console.log('R.tops[R.vs]: ', R.tops[R.vs])
+              })
+            } else {
+              table.deleteRow(data.key);
+              R.utilities.updateHitsCount();
+            }
+          }
         }
-        const key = cell.getRow().getData().key;
-        cell.getValue() ? R.utilities.viewCompounds([key]): R.utilities.hideCompounds([key]);
-      },
-
-      headerClick: (e, column) => {
-        const table = column.getTable();
-        const def = column.getDefinition();
-        const turnOn = !def._allChecked;
-        def._allChecked = turnOn;
-        table.getRows().forEach(row => row.update({ selected: turnOn }));
-      },
-  };
-    const hitsColumn = { title: "Hits", field: "hits", formatter:"tickCross", editor: 'tickCross',
-      accessorClipboard: v => (v ? 1 : 0), accessorDownload:  v => (v ? 1 : 0),
-      cellEdited: (cell) => {
-        const data = cell.getRow().getData();
-        const table = R.hitsTable;
-        cell.getValue() ? table.updateOrAddRow(data.key, data) : table.deleteRow(data.key);
-        R.utilities.updateHitsCount();
-      }
+        const columns = [deleteColumn, hitsColumn, ...R.utilities.buildColumns()]
+        table = R.utilities.tabulize(R.els.topHitsTable, tops, columns);
+        table.on("tableBuilt", function() {R.utilities.updateHitsCount(table, R.els.btnTopHitsModal, R.els.numTopHits);});
     }
-    const columns = [visibleColumn, hitsColumn, ...R.utilities.buildColumns()]
-    R.topHitsTable = R.utilities.tabulize(R.els.topHitsTable, tops, columns);
+    R.topHitsTable = table;
   }
 
   function analyzeData() {
@@ -942,20 +983,24 @@
       R.uniques.push({ ...R.rows[info.idx], copies });
     }
 
-    R.duplicates = Object.fromEntries(
-      [...groups.entries()]
-        .filter(([, idxs]) => idxs.length >= 2)
-        .map(([k, idxs]) => [k, idxs.slice()])
-    );
+    R.duplicates = Object.fromEntries([...groups.entries()]
+      .filter(([, idxs]) => idxs.length >= 2).map(([k, idxs]) => [k, idxs.slice()]));
 
-    R.tops = Object.create(null);
-    for (const row of R.uniques) (R.tops[row.library] ??= []).push(row);
-    for (const [k, v] of Object.entries(R.tops)) {
-      R.tops[k] = v.filter(a => (a.axis === 6) && (norm(a?.[R.x]) >= 0.3))
-        .sort((a, b) => norm(b?.[R.x]) - norm(a?.[R.x]))
-        .slice(0, R.config.nTopHits)
-        .map(a => ({...a, visible: true}));
+    R.hits[R.vs] = R.hits.get(R.vs) ?? [];
+
+    if (!R.tops.has(R.vs)) {
+      R.tops[R.vs] = [];
+      const tops = new Map();
+      for (const row of R.uniques) (tops[row.library] ??= []).push(row);
+      for (const v of Object.values(tops)) {
+        const top = v.filter(a => (a.axis === 6) && (norm(a?.[R.x]) >= 0.3))
+          .sort((a, b) => norm(b?.[R.x]) - norm(a?.[R.x])).slice(0, R.config.nTopHits);
+        for (const t of top) {
+          R.tops[R.vs].push(t);
+        }
+      }
     }
+
   }
 
   function bindEvents() {
@@ -980,6 +1025,8 @@
         try { bootstrap.Dropdown.getOrCreateInstance(btn).hide(); } catch (_) {}
 
         analyzeData();
+        buildHitsTable();
+        buildTopHitsTable();
         renderChart();
         R.library === 'All' ? R.utilities.hideCompounds() : R.utilities.viewCompounds();
       });
@@ -1093,7 +1140,7 @@
           window.location.href = `mailto:?subject=${subject}&body=${body}`;
           break;
         case 'close':
-          R.utilities.hideCompounds([key])
+          R.utilities.removeCompound(key)
           break;
       }
 

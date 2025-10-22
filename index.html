@@ -43,22 +43,25 @@
 
     <!--Switchers-->
     <div class="col-9 col-sm-10 col-md-4 col-lg-5 d-flex justify-content-end" id="switchers">
-      <button type="button" class="btn btn-light position-relative py-0 px-2 disabled" id="btnHitsModal"
+      <button type="button" class="btn btn-light position-relative py-0 px-1 disabled" id="btnHitsModal"
               data-bs-toggle="modal" data-bs-target="#hitsModal" title="Candidate Hits">
         <i class="bi bi-bag"></i>
         <span class="position-absolute top-0 start-100 translate-middle">
           <span class="badge rounded-pill bg-danger text-small" id="numHits"></span>
-          <span class="visually-hidden">Number of candidate hits</span>
         </span>
       </button>
-      <button type="button" class="btn btn-light py-0 ms-5" title="Set equal axes (1:1)" id="btnEqualAxis">
+      <button type="button" class="btn btn-light position-relative py-0 px-1 ms-4" id="btnTopHitsModal"
+              data-bs-toggle="modal" data-bs-target="#topHitsModal" title="Candidate Hits">
+        <i class="bi bi-table"></i>
+        <span class="position-absolute top-0 start-100 translate-middle">
+          <span class="badge rounded-pill bg-primary text-small" id="numTopHits"></span>
+        </span>
+      </button>
+
+      <button type="button" class="btn btn-light py-0 ms-4" title="Set equal axes (1:1)" id="btnEqualAxis">
         <i class="bi bi-graph-up"></i>
       </button>
-      <button type="button" class="btn btn-light py-0 ms-2" title="Top Hits"
-              data-bs-toggle="modal" data-bs-target="#topHitsModal">
-        <i class="bi bi-table"></i>
-      </button>
-      <button type="button" class="btn btn-light py-0 ms-2 me-2" title="Config"
+      <button type="button" class="btn btn-light py-0 ms-1 me-2" title="Config"
               data-bs-toggle="modal" data-bs-target="#configModal">
         <i class="bi bi-gear"></i>
       </button>
