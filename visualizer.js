@@ -48,7 +48,7 @@
       },
 
       structure: {
-        width:  Number(q('structWidth')?.value || 240),
+        width:  Number(q('structWidth')?.value || 200),
         height: Number(q('structHeight')?.value || 100),
       },
 
@@ -222,7 +222,9 @@
         return String(row.compound);
       }
         return [String(row.library ?? ''), ...R.smilesColumns.map(c => String(row?.[c] ?? ''))]
-          .join('|').replace(' ', '').replace('.', '');
+          .join('|').replace(/\s+/g, '')        // Remove all whitespace
+          .replace(/[^a-zA-Z0-9_-]/g, '_') // Replace all non-safe characters with an underscore
+          .replace(/^[0-9_-]/, 'id$&');
     };
     const getSMILES = (row) => Object.entries(R.config.render).filter(([k, v]) => v).map(([k]) => row?.[k] ?? '');
     function ClientXY(id) {
@@ -288,158 +290,135 @@
       handle.style.cursor = 'grab';
       el.style.touchAction = 'none';
     };
+    function saveCardPosition(card) {
+      const {left, top} = card.state;
+      const key = card.getAttribute('id');
+      R.cards[R.vs] ??= {};
+      R.cards[R.vs][key] ??= {};
+      R.cards[R.vs][key].left = left;
+      R.cards[R.vs][key].top = top;
+    }
     function updateConnector(card) {
       let x1, y1, x2, y2, left, top;
-      const rect = card.getBoundingClientRect();
-      if (card?.state) {
-        ({left, top} = card.state);
+
+      // 1. Get current position from style (set by Draggable during a drag)
+      //    We need to parse the numerical value from the style string ("100px")
+      const styleLeft = parseFloat(card.style.left);
+      const styleTop = parseFloat(card.style.top);
+
+      // 2. Determine the definitive position for the state update and line drawing:
+      //    Prioritize the DOM style (if it's a valid number), then fall back to the last saved state.
+
+      // NOTE: This logic ensures we get the most current position during a drag.
+      if (Number.isFinite(styleLeft) && Number.isFinite(styleTop)) {
+        left = styleLeft;
+        top = styleTop;
+      } else if (card?.state) {
+        ({left, top} = card.state); // Fall back to previously saved state
       } else {
+        const rect = card.getBoundingClientRect();
         left = rect.left;
         top = rect.top;
       }
+
+      // --- 3. Calculate Line Coordinates ---
+      const rect = card.getBoundingClientRect(); // Re-read rect for line endpoints
       ({ x1, y1 } = ClientXY(card.getAttribute('id')));
+
       x2 = rect.left + rect.width / 2;
       y2 = rect.bottom;
 
+      // --- 4. Update DOM Line Attributes ---
       card.line.setAttribute('x1', x1);
       card.line.setAttribute('y1', y1);
       card.line.setAttribute('x2', x2);
       card.line.setAttribute('y2', y2);
+
+      // --- 5. Update State and Save ---
+      // Use the definitive (left, top) values for the new state
       card.state = {left: left, top: top, x1: x1, y1: y1, x2: x2, y2: y2}
-    }
-    function attachConnector(card) {
-      let ov = document.getElementById('plot-overlay');
-      if (!ov) {
-        ov = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
-        ov.id = 'plot-overlay';
-        Object.assign(ov.style, {
-          position: 'fixed', left: 0, top: 0, width: '100vw', height: '100vh',
-          pointerEvents: 'none', zIndex: 1049
-        });
-        document.body.appendChild(ov);
-      }
-      const line = document.createElementNS('http://www.w3.org/2000/svg', 'line');
-      line.setAttribute('stroke', '#afafaf');
-      line.setAttribute('stroke-width', '1');
-      line.setAttribute('stroke-linecap', 'round');
-      ov.appendChild(line);
-      
-      card.line = line;
-      requestAnimationFrame(() => { updateConnector(card); });
-      card.addEventListener('dragmove', () => updateConnector(card));
-      return card;
+
+      // The position is now updated and ready to be saved
+      saveCardPosition(card);
     }
     function removeConnector(card) {
-      console.log('card.line: ', card?.line)
-      if (card?.line) {
-        card.line.remove();
-        card.line = null;
-      }
-    }
-    function getVisibleHits() {
-      const rows = t => (Array.isArray(t?.getData?.()) ? t.getData() : []);
-      return [...rows(R.hitsTable).filter(r => r.library === R.library),
-              ...rows(R.topHitsTable).filter(r => r.library === R.library)];
+      if (!card.line) return;
+      card.removeEventListener('dragmove', card.updateFunction);
+      card.line.remove();
+      card.line = null;
+      card.updateFunction = null; // Assuming you store the function reference
+  }
+    function attachConnector(card) {
+        let ov = document.getElementById('plot-overlay');
+        if (!ov) {
+          ov = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+          ov.id = 'plot-overlay';
+          Object.assign(ov.style, {
+            position: 'fixed', left: 0, top: 0, width: '100vw', height: '100vh',
+            pointerEvents: 'none', zIndex: 1049
+          });
+          document.body.appendChild(ov);
+        }
+
+        const line = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+        line.setAttribute('stroke', '#afafaf');
+        line.setAttribute('stroke-width', '1');
+        line.setAttribute('stroke-linecap', 'round');
+        ov.appendChild(line);
+
+        card.line = line;
+
+        const updateFunction = () => updateConnector(card);
+        card.updateFunction = updateFunction;
+
+        requestAnimationFrame(updateFunction);
+        card.addEventListener('dragmove', updateFunction);
+        return card;
     }
     function showCompound(id, restyle=true) {
       if (restyle) restylePoints(null, [id], 'add');
       const row = R.uniques.filter(r => r.key === id)[0];
-      let card = null;
-      if (id in R.cards) {
-        card = R.cards[id];
-        card.classList.remove('d-none');
-      } else {
-        card = assembleCompoundCard(row);
-      }
-      attachConnector(card);
-      updateConnector(card);
-      R.topHitsTable.updateOrAddData([row]).then(function (rows) {
-          updateHitsCount(R.topHitsTable, R.els.btnTopHitsModal, R.els.numTopHits);
-          R.tops[R.vs] = R.topHitsTable.getData();
-        })
+      assembleCompoundCard(row);
+      R.topHitsTable.updateOrAddData([row]).then(function () {
+        updateHitsCount(R.topHitsTable, R.els.btnTopHitsModal, R.els.numTopHits);
+        R.tops[R.vs] = R.topHitsTable.getData();
+      })
     }
     function showCompounds() {
-      const visibles = getVisibleHits();
-      restylePoints(visibles, null, 'replace');
-      for (const row of visibles) {
-        showCompound(row.key, false);
-      }
-    }
-    function viewCompounds(ids = null) {
-      let visibles = new Set(getVisibleHits().map(r => r.key));
-      if (ids) visibles = visibles.union(new Set(ids));
-      const rows = R.uniques.filter(row => visibles.has(row.key));
-
+      const rows = [...(R.tops[R.vs] ?? []), ...(R.hits[R.vs] ?? [])].filter(row => row.library === R.library);
       if (rows.length > 0) {
-        console.log('updating rows: ', rows)
-        R.topHitsTable.updateOrAddData(rows).then(function (rows) {
-          updateHitsCount(R.topHitsTable, R.els.btnTopHitsModal, R.els.numTopHits);
-          R.tops[R.vs] = R.topHitsTable.getData();
-        })
-
-        const gd = R.els.chartPanel;
-        const after = new Promise(res => gd.once ? gd.once('plotly_afterplot', res) : res());
-        restylePoints(null, Array.from(visibles), 'replace');
-
-        after.then(() => {
-          const cards = [];
-          for (const row of rows) {
-            const key = row.key;
-            let card = R.cards[key];
-            if (!card) {
-              card = assembleCompoundCard(R.uniques.filter(r => r.key === key)[0]);
-              R.cards[key] = card
-            } else {
-              card.classList.remove('d-none');
-            }
-            cards.push(card);
-            R.cards[key] = card;
-          }
-
-          for (const card of cards) {
-            card.line ? updateConnector(card) : attachConnector(card);
-          }
-        });
-
-        ids = Object.keys(R.cards).filter(key => !visibles.has(key));
-        hideCompounds(ids);
-      }
-
-    }
-    function hideCompounds(ids = null) {
-      ids = ids || Object.keys(R.cards);
-      for (const id of ids) {
-        const card = R.cards[id];
-        if (card) {
-          removeConnector(card);
-          card.classList.add('d-none');
+        restylePoints(rows, null, 'replace');
+        for (const row of rows) {
+          showCompound(row.key, false);
         }
       }
-      restylePoints(null, ids, 'replace');
-      // console.log('R.topHitsTable: ', R.topHitsTable)
-      // for (const row of R.topHitsTable.getRows()) {
-      //   const data = row.getData();
-      //   if (ids.includes(data.key)) {
-      //     row.update({visible: false});
-      //   }
-      // }
+
     }
-    function removeCompound(id) {
+    function removeCompounds() {
+      const cards = document.querySelectorAll('.compound-card');
+      if (cards.length > 0) {
+        for (const card of cards) {
+          removeCompound(card.getAttribute('id'), false)
+        }
+      }
+    }
+    function removeCompound(id, removeFromTop=true) {
       const card = q(id);
       if (card) {
         removeConnector(card);
         card.remove();
       }
       restylePoints(null, [id], 'remove');
-      if (R.hitsTable.getRow(id)) {
+      if (R.hitsTable.getDataCount() > 0 && R.hitsTable.getRow(id)) {
         R.hitsTable.deleteRow(id);
         updateHitsCount(R.hitsTable, R.els.hitsModal, R.els.numHits);
       }
 
-      if (R.topHitsTable.getRow()) {
+      if (R.topHitsTable.getDataCount() > 0 && R.topHitsTable.getRow(id)) {
         R.topHitsTable.deleteRow(id);
         updateHitsCount(R.topHitsTable, R.els.topHitsModal, R.els.numTopHits);
       }
+      if (removeFromTop) R.tops[R.vs] = R.tops[R.vs].filter(row => row.key !== id);
     }
     function restylePoints(rows=null, ids=null, mode='add') {
       const uids = ids || rows?.map(row => row.key);
@@ -519,8 +498,8 @@
       card.style.fontSize = '0.8rem';
       card.style.visibility = visible ? 'visible' : 'hidden';
 
-      const card_position = R.cards?.[R.vs] ?? {};
-      const position = card_position?.[key] ?? {};
+      const card_position = R.cards[R.vs] ?? {};
+      const position = card_position[key] ?? {};
 
       let left = position.left;
       let top = position.top;
@@ -660,8 +639,8 @@
 
     return { findColumns, assembleCompoundCard, assembleCompoundName, getSMILES, assemblePlainText,
              assembleKV, assembleCountScore, assembleHoverText, alignModebarWithLegend,
-             buildColumns, keyForRow, tabulize, updateHitsCount, getVisibleHits,
-             viewCompounds, hideCompounds, removeCompound, showCompound, showCompounds
+             buildColumns, keyForRow, tabulize, updateHitsCount,
+             removeCompounds, removeCompound, showCompound, showCompounds
            };
   })();
 
@@ -750,14 +729,7 @@
 
       gd.removeAllListeners?.('plotly_click');
       gd.on('plotly_click', ev => {
-        // const ids = R.utilities.getVisibleHits().map(r => r.key)
         const id = ev.points[0].id;
-        // if (ids.includes(id)) {
-        //   const card = document.querySelector(`#${CSS.escape(id)}.card`)
-        //   card ? R.utilities.removeCompound(id) : R.utilities.viewCompounds([id]);
-        // } else {
-        //   R.utilities.viewCompounds([id]);
-        // }
         const card = document.querySelector(`#${CSS.escape(id)}.card`)
         card ? R.utilities.removeCompound(id) : R.utilities.showCompound(id);
       });
@@ -901,8 +873,10 @@
     const data = R.hits[R.vs] || [];
     let table = R.hitsTable;
     if (table) {
-      table.replaceData(data);
-      R.utilities.updateHitsCount(table, R.els.btnHitsModal, R.els.numHits);
+      table.replaceData(data).then(function () {
+        R.utilities.updateHitsCount(table, R.els.btnHitsModal, R.els.numHits);
+      })
+
     } else {
       const deleteCol = {
       title: "", width: 46, hozAlign: "center", headerSort: false,
@@ -943,50 +917,50 @@
     const tops = Object.values(R.tops[R.vs]).flat().map(top => ({...top, hits: keys.includes(top.key)}));
     let table = R.topHitsTable;
     if (table) {
-      table.replaceData(tops);
-      R.utilities.updateHitsCount(table, R.els.btnTopHitsModal, R.els.numTopHits);
-    } else {
-        const deleteColumn = {
-      title: "", width: 46, hozAlign: "center", headerSort: false,
-      titleFormatter: () => `<i class="bi bi-trash text-danger" aria-label="Delete row"></i>`,
-      formatter: () => `<button type="button" class="btn btn-sm btn-outline-danger" 
-                          title="Delete row" data-action="del">
-                          <i class="bi bi-trash"></i>
-                        </button>`,
-      cellClick: (e, cell) => {
-        const btn = e.target.closest('button[data-action="del"]');
-        if (!btn) return;
-        e.preventDefault();
-        e.stopPropagation();
-        const row = cell.getRow();
-        row.delete();
+      table.replaceData(tops).then(function () {
         R.utilities.updateHitsCount(table, R.els.btnTopHitsModal, R.els.numTopHits);
-        R.utilities.hideCompounds([cell.getRow().getData().key]);
-        R.tops[R.vs] = R.topHitsTable.getData();
-      },
-    };
-        const hitsColumn = { title: "Hits", field: "hits", formatter:"tickCross",
-          accessorClipboard: v => (v ? 1 : 0), accessorDownload:  v => (v ? 1 : 0),
-          cellClick: (e, cell) => {
-            const next = !Boolean(cell.getValue());
-            cell.setValue(next, true);
-            const data = cell.getRow().getData();
-            const table = R.hitsTable;
-            if (next) {
-              table.updateOrAddRow(data.key, data).then( () => {
-                R.utilities.updateHitsCount();
-                R.tops[R.vs] = table.getData();
-                console.log('R.tops[R.vs]: ', R.tops[R.vs])
-              })
-            } else {
-              table.deleteRow(data.key);
+      })
+    } else {
+      const deleteColumn = {
+        title: "", width: 46, hozAlign: "center", headerSort: false,
+        titleFormatter: () => `<i class="bi bi-trash text-danger" aria-label="Delete row"></i>`,
+        formatter: () => `<button type="button" class="btn btn-sm btn-outline-danger" 
+                            title="Delete row" data-action="del">
+                            <i class="bi bi-trash"></i>
+                          </button>`,
+        cellClick: (e, cell) => {
+          const btn = e.target.closest('button[data-action="del"]');
+          if (!btn) return;
+          e.preventDefault();
+          e.stopPropagation();
+          const row = cell.getRow();
+          row.delete();
+          R.utilities.updateHitsCount(table, R.els.btnTopHitsModal, R.els.numTopHits);
+          R.utilities.removeCompound(cell.getRow().getData().key);
+          R.tops[R.vs] = R.topHitsTable.getData();
+        },
+      };
+      const hitsColumn = { title: "Hits", field: "hits", formatter:"tickCross",
+        accessorClipboard: v => (v ? 1 : 0), accessorDownload:  v => (v ? 1 : 0),
+        cellClick: (e, cell) => {
+          const next = !Boolean(cell.getValue());
+          cell.setValue(next, true);
+          const data = cell.getRow().getData();
+          const table = R.hitsTable;
+          if (next) {
+            table.updateOrAddRow(data.key, data).then( () => {
               R.utilities.updateHitsCount();
-            }
+              R.tops[R.vs] = table.getData();
+            })
+          } else {
+            table.deleteRow(data.key);
+            R.utilities.updateHitsCount();
           }
         }
-        const columns = [deleteColumn, hitsColumn, ...R.utilities.buildColumns()]
-        table = R.utilities.tabulize(R.els.topHitsTable, tops, columns);
-        table.on("tableBuilt", function() {R.utilities.updateHitsCount(table, R.els.btnTopHitsModal, R.els.numTopHits);});
+      }
+      const columns = [deleteColumn, hitsColumn, ...R.utilities.buildColumns()]
+      table = R.utilities.tabulize(R.els.topHitsTable, tops, columns);
+      table.on("tableBuilt", function() {R.utilities.updateHitsCount(table, R.els.btnTopHitsModal, R.els.numTopHits);});
     }
     R.topHitsTable = table;
   }
@@ -1063,7 +1037,7 @@
         buildHitsTable();
         buildTopHitsTable();
         renderChart();
-        R.utilities.hideCompounds();
+        R.utilities.removeCompounds();
         if (R.library !== 'All') R.utilities.showCompounds();
       });
     }
@@ -1155,12 +1129,12 @@
             btn.classList.replace('bi-bag-fill', 'bi-bag');
             btn.classList.remove('text-danger');
           } else {
-            R.hitsTable.updateOrAddRow(key, row);
+            R.hitsTable.updateOrAddData([row]);
             btn.classList.remove('bi-bag');
             btn.classList.add('bi-bag-fill');
             btn.classList.add('text-danger');
           }
-          R.utilities.updateHitsCount();
+          R.utilities.updateHitsCount(R.hitsTable, R.els.btnHitsModal, R.els.numHits);
           break;
         }
         case 'copy': {
@@ -1194,6 +1168,7 @@
 
     buildSelector();
     analyzeData();
+    buildHitsTable();
     buildTopHitsTable();
     renderChart();
     bindEvents();

@@ -158,7 +158,7 @@
 
   function smilesSVG(smi, width=200, height=100, id='') {
     id = id || 'smiles_svg_' + Math.random().toString(36).slice(2,9);
-    return `<svg id="${id}" class="smiles-svg" data-smiles="${smi || ''}"></svg>`;
+    return `<svg id="${id}" class="smiles-svg" data-smiles="${smi || ''}" width="${width}" height="${height}"></svg>`;
   }
 
   function setDefaults(opts) {
