@@ -528,8 +528,6 @@
 
       SmilesRenderer.drawSMILES(card);
       card = attachConnector(card)
-      updateConnector(card);
-      requestAnimationFrame(function(){ updateConnector(card); });
       Draggable(card, header);
 
       return card
