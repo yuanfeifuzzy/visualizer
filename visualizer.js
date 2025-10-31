@@ -19,8 +19,8 @@
     countColumns: [],
     scoreColumns: [],
     smilesColumns: [],
-    hits: new Map(),
-    tops: new Map(),
+    hits: {},
+    tops: {},
     uniques: [],
     duplicates: {},
     x: null,
@@ -221,7 +221,8 @@
       if (Object.prototype.hasOwnProperty.call(row, 'compound') && row.compound != null && row.compound !== '') {
         return String(row.compound);
       }
-        return [String(row.library ?? ''), ...R.smilesColumns.map(c => String(row?.[c] ?? ''))].join('|').replace(' ', '_');
+        return [String(row.library ?? ''), ...R.smilesColumns.map(c => String(row?.[c] ?? ''))]
+          .join('|').replace(' ', '').replace('.', '');
     };
     const getSMILES = (row) => Object.entries(R.config.render).filter(([k, v]) => v).map(([k]) => row?.[k] ?? '');
     function ClientXY(id) {
@@ -329,6 +330,7 @@
       return card;
     }
     function removeConnector(card) {
+      console.log('card.line: ', card?.line)
       if (card?.line) {
         card.line.remove();
         card.line = null;
@@ -338,6 +340,30 @@
       const rows = t => (Array.isArray(t?.getData?.()) ? t.getData() : []);
       return [...rows(R.hitsTable).filter(r => r.library === R.library),
               ...rows(R.topHitsTable).filter(r => r.library === R.library)];
+    }
+    function showCompound(id, restyle=true) {
+      if (restyle) restylePoints(null, [id], 'add');
+      const row = R.uniques.filter(r => r.key === id)[0];
+      let card = null;
+      if (id in R.cards) {
+        card = R.cards[id];
+        card.classList.remove('d-none');
+      } else {
+        card = assembleCompoundCard(row);
+      }
+      attachConnector(card);
+      updateConnector(card);
+      R.topHitsTable.updateOrAddData([row]).then(function (rows) {
+          updateHitsCount(R.topHitsTable, R.els.btnTopHitsModal, R.els.numTopHits);
+          R.tops[R.vs] = R.topHitsTable.getData();
+        })
+    }
+    function showCompounds() {
+      const visibles = getVisibleHits();
+      restylePoints(visibles, null, 'replace');
+      for (const row of visibles) {
+        showCompound(row.key, false);
+      }
     }
     function viewCompounds(ids = null) {
       let visibles = new Set(getVisibleHits().map(r => r.key));
@@ -389,7 +415,7 @@
           card.classList.add('d-none');
         }
       }
-      restylePoints(null, ids, 'remove');
+      restylePoints(null, ids, 'replace');
       // console.log('R.topHitsTable: ', R.topHitsTable)
       // for (const row of R.topHitsTable.getRows()) {
       //   const data = row.getData();
@@ -399,17 +425,16 @@
       // }
     }
     function removeCompound(id) {
-      const card = R.cards[id];
+      const card = q(id);
       if (card) {
         removeConnector(card);
         card.remove();
-        delete R.cards[id];
       }
       restylePoints(null, [id], 'remove');
       if (R.hitsTable.getRow(id)) {
         R.hitsTable.deleteRow(id);
         updateHitsCount(R.hitsTable, R.els.hitsModal, R.els.numHits);
-      };
+      }
 
       if (R.topHitsTable.getRow()) {
         R.topHitsTable.deleteRow(id);
@@ -494,22 +519,33 @@
       card.style.fontSize = '0.8rem';
       card.style.visibility = visible ? 'visible' : 'hidden';
 
-      const panel = R.els.chartPanel.getBoundingClientRect();
-      const { x1, y1 } = ClientXY(row.key);
-      const start = panel.left + 5 + 60;
-      const stop  = panel.right - 5 - 5;
-      let left = x1 - (width / 2);
-      if (left < start) {
-        left = start;
-      } else {
-        if ((x1 + (width / 2) > stop)) left = stop - width;
+      const card_position = R.cards?.[R.vs] ?? {};
+      const position = card_position?.[key] ?? {};
+
+      let left = position.left;
+      let top = position.top;
+
+      if (left === undefined || top === undefined) {
+          const panel = R.els.chartPanel.getBoundingClientRect();
+          const { x1, y1 } = ClientXY(row.key); // Assuming ClientXY is defined elsewhere
+          const START_BOUND = panel.left + 65; // 5 + 60
+          const STOP_BOUND = panel.right - 10; // 5 + 5
+          const HALF_WIDTH = width / 2; // Assuming 'width' is available
+
+          left ??= x1 - HALF_WIDTH;
+          if (left < START_BOUND) {
+              left = START_BOUND;
+          } else if (left + width > STOP_BOUND) {
+              left = STOP_BOUND - width;
+          }
+          top ??= panel.top + 30;
       }
 
-      card.style.left = String(Math.round(left)) + 'px';
-      card.style.top  = String(Math.round(panel.top + 30)) + 'px';
+      R.cards[R.vs] ??= {}, R.cards[R.vs][key] = {left: left, top: top};
 
+      card.style.left = String(Math.round(left)) + 'px';
+      card.style.top  = String(Math.round(top)) + 'px';
       document.body.appendChild(card);
-      R.cards[row.key] = card;
 
       SmilesRenderer.drawSMILES(card);
       card = attachConnector(card)
@@ -625,7 +661,7 @@
     return { findColumns, assembleCompoundCard, assembleCompoundName, getSMILES, assemblePlainText,
              assembleKV, assembleCountScore, assembleHoverText, alignModebarWithLegend,
              buildColumns, keyForRow, tabulize, updateHitsCount, getVisibleHits,
-             viewCompounds, hideCompounds, removeCompound
+             viewCompounds, hideCompounds, removeCompound, showCompound, showCompounds
            };
   })();
 
@@ -714,14 +750,16 @@
 
       gd.removeAllListeners?.('plotly_click');
       gd.on('plotly_click', ev => {
-        const ids = R.utilities.getVisibleHits().map(r => r.key)
+        // const ids = R.utilities.getVisibleHits().map(r => r.key)
         const id = ev.points[0].id;
-        if (ids.includes(id)) {
-          const card = document.querySelector(`#${CSS.escape(id)}.card`)
-          card ? R.utilities.removeCompound(id) : R.utilities.viewCompounds([id]);
-        } else {
-          R.utilities.viewCompounds([id]);
-        }
+        // if (ids.includes(id)) {
+        //   const card = document.querySelector(`#${CSS.escape(id)}.card`)
+        //   card ? R.utilities.removeCompound(id) : R.utilities.viewCompounds([id]);
+        // } else {
+        //   R.utilities.viewCompounds([id]);
+        // }
+        const card = document.querySelector(`#${CSS.escape(id)}.card`)
+        card ? R.utilities.removeCompound(id) : R.utilities.showCompound(id);
       });
     } else {
       R.els.btnEqualAxis.classList.add('disabled')
@@ -922,7 +960,7 @@
         e.stopPropagation();
         const row = cell.getRow();
         row.delete();
-        R.utilities.updateTopHitsCount();
+        R.utilities.updateHitsCount(table, R.els.btnTopHitsModal, R.els.numTopHits);
         R.utilities.hideCompounds([cell.getRow().getData().key]);
         R.tops[R.vs] = R.topHitsTable.getData();
       },
@@ -986,11 +1024,9 @@
     R.duplicates = Object.fromEntries([...groups.entries()]
       .filter(([, idxs]) => idxs.length >= 2).map(([k, idxs]) => [k, idxs.slice()]));
 
-    R.hits[R.vs] = R.hits.get(R.vs) ?? [];
-
-    if (!R.tops.has(R.vs)) {
+    if (!Object.hasOwn(R.tops, R.vs)) {
       R.tops[R.vs] = [];
-      const tops = new Map();
+      const tops = {};
       for (const row of R.uniques) (tops[row.library] ??= []).push(row);
       for (const v of Object.values(tops)) {
         const top = v.filter(a => (a.axis === 6) && (norm(a?.[R.x]) >= 0.3))
@@ -1000,7 +1036,6 @@
         }
       }
     }
-
   }
 
   function bindEvents() {
@@ -1028,7 +1063,8 @@
         buildHitsTable();
         buildTopHitsTable();
         renderChart();
-        R.library === 'All' ? R.utilities.hideCompounds() : R.utilities.viewCompounds();
+        R.utilities.hideCompounds();
+        if (R.library !== 'All') R.utilities.showCompounds();
       });
     }
     bindDropdown(R.els.xSel, R.els.btnX, 'X')
@@ -1102,9 +1138,9 @@
 
           const ids = R.duplicates[key];
           const rows = R.rows.filter(r => ids.includes(r.index));
-          const excludes = ['SMILES', 'Library', 'Axis', 'Encodings']
+          const excludes = ['Library', 'Structure', 'Encodings']
           const columns = R.utilities.buildColumns().filter(x => !excludes.includes(x.title));
-          R.utilities.tabulize(R.els.encodingTable, rows, columns, 'fitDataTable');
+          R.utilities.tabulize(R.els.encodingTable, rows, columns, 'fitColumns');
           const modal = bootstrap.Modal.getOrCreateInstance(R.els.encodingModal, {
             backdrop: true,
             keyboard: true,
@@ -1158,10 +1194,7 @@
 
     buildSelector();
     analyzeData();
-
-    buildHitsTable();
     buildTopHitsTable();
-
     renderChart();
     bindEvents();
   }
