@@ -99,8 +99,8 @@
       setVal('colorTri',  cfg.colors.tri);
     }
   }
-  const GlobalConfig = () => {
-    const cfg = readConfigForm();
+  const GlobalConfig = (cfg) => {
+    cfg = cfg || readConfigForm();
     R.config = cfg;
 
     document.body.style.fontFamily = cfg.font;
@@ -110,7 +110,7 @@
   R.els = {
     btnHitsModal         : q('btnHitsModal'),
     btnTopHitsModal      : q('btnTopHitsModal'),
-    btnSaveSession         : q('btnSaveSession'),
+    btnSaveSession       : q('btnSaveSession'),
     switchers            : q('switchers'),
     selectors            : q('selectors'),
     btnX                 : q('btnX'),
@@ -133,7 +133,8 @@
     hitsTable            : q('hitsTable'),
     numHits              : q('numHits'),
     numTopHits           : q('numTopHits'),
-    topHitsTable         : q('topHitsTable')
+    topHitsTable         : q('topHitsTable'),
+    sessionInput         : q('sessionInput') // Added for session file upload
   }
 
   R.io = (() => {
@@ -160,6 +161,30 @@
       });
     });
 
+    // Function to handle decompression and JSON parsing of a session file
+    const loadSession = async (file) => {
+      if (!file) throw new Error("No session file provided.");
+
+      const u8 = new Uint8Array(await file.arrayBuffer());
+      let jsonString;
+
+      if (isGzip(u8)) {
+        // Decompress GZIP payload using pako
+        jsonString = window.pako.ungzip(u8, { to: "string" });
+      } else {
+        // Treat as uncompressed JSON file (read text directly)
+        jsonString = await file.text();
+      }
+
+      try {
+        const sessionData = JSON.parse(jsonString);
+        return sessionData;
+      } catch (e) {
+        throw new Error("Failed to parse session file. File may be corrupt or not valid JSON.");
+      }
+    };
+
+
     const load = async (input, { onComplete } = {}) => {
       try {
         let rows;
@@ -181,9 +206,11 @@
         else if (input instanceof Blob) {
           const u8 = new Uint8Array(await input.arrayBuffer());
           if (isGzip(u8)) {
-            input = pakoRef.ungzip(u8, { to: "string" });
+            // Note: input for papaParseFile should be the decompressed string, not the Blob
+            input = window.pako.ungzip(u8, { to: "string" });
           }
-          rows = await papaParseFile(input);
+          // The papaParse function needs the raw string input when not using download: true
+          rows = await papaParse(input, false);
         } else {
           throw new Error("load expects a URL string or a File/Blob.");
         }
@@ -192,7 +219,8 @@
         throw err;
       }
     };
-    return { load };
+    // Expose loadSession for use in the new input handler
+    return { load, loadSession };
   })();
 
   R.utilities = (() => {
@@ -216,7 +244,7 @@
         throw Error(`No column was found with prefix "${prefix}" and suffix "${suffix}"`);
       }
       return cs;
-    }
+    };
     const keyForRow = (row) => {
       if (Object.prototype.hasOwnProperty.call(row, 'compound') && row.compound != null && row.compound !== '') {
         return String(row.compound);
@@ -226,11 +254,10 @@
           .replace(/[^a-zA-Z0-9_-]/g, '') // Remove all non-safe characters
           .replace(/^[0-9_-]/, '');       // Remove leading numbers and underscores
     };
-    const getSMILES = (row) => Object.entries(R.config.render).filter(([k, v]) => v).map(([k]) => row?.[k] ?? '');
-    function ClientXY(id) {
+    const getSMILES = (row) => Object.entries(R.config.render).filter(([, v]) => v).map(([k]) => row?.[k] ?? '');
+    const ClientXY = (id) => {
       const gd = R.els.chartPanel;
       const data = gd._fullData || gd.data || [];
-      const pe = gd.querySelector('.cartesianlayer .plot');
       const rect = gd.getBoundingClientRect();
       let clientX = null;
       let clientY = null;
@@ -257,7 +284,7 @@
         }
       }
       return {x1: clientX, y1: clientY};
-    }
+    };
     const Draggable = (el, handle) => {
       let startX, startY, startLeft, startTop;
 
@@ -290,26 +317,22 @@
       handle.style.cursor = 'grab';
       el.style.touchAction = 'none';
     };
-    function saveCardPosition(card) {
+    const saveCardPosition = (card) => {
       const {left, top} = card.state;
       const key = card.getAttribute('id');
       R.cards[R.vs] ??= {};
       R.cards[R.vs][key] ??= {};
       R.cards[R.vs][key].left = left;
       R.cards[R.vs][key].top = top;
-    }
-    function updateConnector(card) {
+    };
+    const updateConnector = (card) => {
       let x1, y1, x2, y2, left, top;
 
       // 1. Get current position from style (set by Draggable during a drag)
-      //    We need to parse the numerical value from the style string ("100px")
       const styleLeft = parseFloat(card.style.left);
       const styleTop = parseFloat(card.style.top);
 
       // 2. Determine the definitive position for the state update and line drawing:
-      //    Prioritize the DOM style (if it's a valid number), then fall back to the last saved state.
-
-      // NOTE: This logic ensures we get the most current position during a drag.
       if (Number.isFinite(styleLeft) && Number.isFinite(styleTop)) {
         left = styleLeft;
         top = styleTop;
@@ -335,20 +358,17 @@
       card.line.setAttribute('y2', y2);
 
       // --- 5. Update State and Save ---
-      // Use the definitive (left, top) values for the new state
       card.state = {left: left, top: top, x1: x1, y1: y1, x2: x2, y2: y2}
-
-      // The position is now updated and ready to be saved
       saveCardPosition(card);
-    }
-    function removeConnector(card) {
+    };
+    const removeConnector = (card) => {
       if (!card.line) return;
       card.removeEventListener('dragmove', card.updateFunction);
       card.line.remove();
       card.line = null;
       card.updateFunction = null; // Assuming you store the function reference
-  }
-    function attachConnector(card) {
+    };
+    const attachConnector = (card) => {
         let ov = document.getElementById('plot-overlay');
         if (!ov) {
           ov = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
@@ -374,17 +394,17 @@
         requestAnimationFrame(updateFunction);
         card.addEventListener('dragmove', updateFunction);
         return card;
-    }
-    function showCompound(id, restyle=true) {
+    };
+    const showCompound = (id, restyle=true) => {
       if (restyle) restylePoints(null, [id], 'add');
       const row = R.uniques.filter(r => r.key === id)[0];
       assembleCompoundCard(row);
-      R.topHitsTable.updateOrAddData([row]).then(function () {
+      R.topHitsTable.updateOrAddData([row]).then(() => {
         updateHitsCount(R.topHitsTable, R.els.btnTopHitsModal, R.els.numTopHits);
         R.tops[R.vs] = R.topHitsTable.getData();
       })
-    }
-    function showCompounds() {
+    };
+    const showCompounds = () => {
       const rows = [...(R.tops[R.vs] ?? []), ...(R.hits[R.vs] ?? [])].filter(row => row.library === R.library);
       if (rows.length > 0) {
         restylePoints(rows, null, 'replace');
@@ -392,17 +412,16 @@
           showCompound(row.key, false);
         }
       }
-
-    }
-    function removeCompounds() {
+    };
+    const removeCompounds = () => {
       const cards = document.querySelectorAll('.compound-card');
       if (cards.length > 0) {
         for (const card of cards) {
           removeCompound(card.getAttribute('id'), false)
         }
       }
-    }
-    function removeCompound(id, removeFromTop=true) {
+    };
+    const removeCompound = (id, removeFromTop=true) => {
       const card = q(id);
       if (card) {
         removeConnector(card);
@@ -411,16 +430,16 @@
       restylePoints(null, [id], 'remove');
       if (R.hitsTable.getDataCount() > 0 && R.hitsTable.getRow(id)) {
         R.hitsTable.deleteRow(id);
-        updateHitsCount(R.hitsTable, R.els.hitsModal, R.els.numHits);
+        updateHitsCount(R.hitsTable, R.els.btnHitsModal, R.els.numHits);
       }
 
       if (R.topHitsTable.getDataCount() > 0 && R.topHitsTable.getRow(id)) {
         R.topHitsTable.deleteRow(id);
-        updateHitsCount(R.topHitsTable, R.els.topHitsModal, R.els.numTopHits);
+        updateHitsCount(R.topHitsTable, R.els.btnTopHitsModal, R.els.numTopHits);
       }
       if (removeFromTop) R.tops[R.vs] = R.tops[R.vs].filter(row => row.key !== id);
-    }
-    function restylePoints(rows=null, ids=null, mode='add') {
+    };
+    const restylePoints = (rows=null, ids=null, mode='add') => {
       const uids = ids || rows?.map(row => row.key);
       if (uids) {
         const want = new Set(uids);
@@ -454,7 +473,7 @@
         return Promise.all(updaters);
       }
       return Promise.resolve();
-    }
+    };
     const assembleCompoundCard = (row, visible=true) => {
       const smiles = getSMILES(row);
       const trs = smiles.map(s => `<tr><td colspan="2">${SmilesRenderer.smilesSVG(s, R.config.structure.width, R.config.structure.height)}</td></tr>`);
@@ -574,7 +593,7 @@
         ss.push(s)
       }
       return ss.join('\n')
-    }
+    };
     const alignModebarWithLegend = () => {
       const mb  = R.els.chartPanel.querySelector('.modebar');
       const leg = R.els.chartPanel.querySelector('.legend');
@@ -633,7 +652,7 @@
         span.innerText = '';
       }
 
-    }
+    };
     const getCompactTimestamp = () => {
       const now = new Date();
       const pad = (num) => String(num).padStart(2, '0');
@@ -644,16 +663,45 @@
       const min = pad(now.getMinutes());
       const ss = pad(now.getSeconds());
       return `${mm}${dd}${yyyy}${hh}${min}${ss}`;
-    }
+    };
 
     return { findColumns, assembleCompoundCard, assembleCompoundName, getSMILES, assemblePlainText,
              assembleKV, assembleCountScore, assembleHoverText, alignModebarWithLegend,
              buildColumns, keyForRow, tabulize, updateHitsCount,
-             removeCompounds, removeCompound, showCompound, showCompounds, getCompactTimestamp
+             removeCompounds, removeCompound, showCompound, showCompounds, getCompactTimestamp,
            };
   })();
 
-  function buildSelector() {
+  const loadSessionData = (sessionData) => {
+    // 1. Sanity checks (ensure essential properties exist)
+    if (!sessionData || !Array.isArray(sessionData.rows) || !sessionData.vs) {
+      console.error("Invalid session file format.");
+      return;
+    }
+
+    // 2. Merge all key properties from the session data into R
+    // We explicitly overwrite only the state variables we want to restore
+    const stateKeys = [
+      'config', 'rows', 'columns', 'libraries', 'countColumns', 'scoreColumns',
+      'smilesColumns', 'hits', 'tops', 'uniques', 'duplicates',
+      'x', 'y', 'vs', 'library', 'cards'
+    ];
+
+    stateKeys.forEach(key => {
+      if (sessionData[key] !== undefined) {
+        R[key] = sessionData[key];
+      }
+    });
+
+    // 3. Update the UI config forms (since R.config has been loaded)
+    populateConfigForm(R.config);
+    GlobalConfig(R.config); // Re-apply global styles
+
+    // 4. Proceed with page initialization using the loaded state
+    initializePage(R.rows);
+  };
+
+  const buildSelector = () => {
     const buildOptions = (selector, options, tag, selected, btn) => {
       if (!selector) return;
       selector.innerHTML = '';
@@ -675,22 +723,26 @@
     let y;
     const scoreColumns = R.scoreColumns;
 
-    if (scoreColumns.includes('zscore_NTC')) {
+    if (R.x && R.y) {
+      x = R.x; y = R.y;
+    } else if (scoreColumns.includes('zscore_NTC')) {
       x = scoreColumns.find(element => element !== 'zscore_NTC');
       y = 'zscore_NTC';
     } else {
       x = scoreColumns[0];
       y = scoreColumns[1];
     }
+    R.x = x;
+    R.y = y;
 
     buildOptions(R.els.xSel, scoreColumns, 'X', x, R.els.btnX);
     buildOptions(R.els.ySel, scoreColumns, 'Y', y, R.els.btnY)
-    buildOptions(R.els.librarySel, ['All', ...R.libraries], 'Library', 'All', R.els.btnLibrary)
+    buildOptions(R.els.librarySel, ['All', ...R.libraries], 'Library', R.library || 'All', R.els.btnLibrary)
     R.els.selectors.classList.remove('d-none')
     R.vs = `${x.replace('zscore_', '')}.vs.${y.replace('zscore_', '')}`
-  }
+  };
 
-  function squareChart() {
+  const squareChart = () => {
     const gd = R.els.chartPanel;
     // 1) Collect x/y from current traces
     const xs = [];
@@ -728,22 +780,24 @@
       'yaxis.range': [lo, hi],
       shapes: [...others, diagonal]
     });
-  }
+  };
 
-  function handleChartEvent(gd) {
+  const handleChartEvent = (gd) => {
     if (R.library !== 'All') {
       R.utilities.alignModebarWithLegend();
 
       gd.removeAllListeners?.('plotly_click');
-      gd.on('plotly_click', ev => {
-        const id = ev.points[0].id;
-        const card = document.querySelector(`#${CSS.escape(id)}.card`)
-        card ? R.utilities.removeCompound(id) : R.utilities.showCompound(id);
-      });
+      if (typeof gd.on === 'function') { // ⬅️ Defensive check added here
+          gd.on('plotly_click', ev => {
+            const id = ev.points[0].id;
+            const card = document.querySelector(`#${CSS.escape(id)}.card`)
+            card ? R.utilities.removeCompound(id) : R.utilities.showCompound(id);
+          });
+      }
     }
-  }
+  };
 
-  function renderChart() {
+  const renderChart = () => {
     const x = R.x || R.els.btnX?.textContent.split(': ')[1];
     const y = R.y || R.els.btnY?.textContent.split(': ')[1];
     const library = R.library || R.els.btnLibrary?.textContent.split(': ')[1];
@@ -872,15 +926,15 @@
     Plotly.react(R.els.chartPanel, traces.filter(r => r), layout, config)
       .then(handleChartEvent)
       .catch(err => console.error('Failed to make chart: ', err));
-  }
+  };
 
-  function buildHitsTable() {
+  const buildHitsTable = () => {
     const data = R.hits[R.vs] || [];
     let table = R.hitsTable;
     if (table) {
-      table.replaceData(data).then(function () {
+      table.replaceData(data).then(() => {
         R.utilities.updateHitsCount(table, R.els.btnHitsModal, R.els.numHits);
-      })
+      });
 
     } else {
       const deleteCol = {
@@ -912,18 +966,18 @@
     };
       const columns = [deleteCol, ...R.utilities.buildColumns()];
       table = R.utilities.tabulize(R.els.hitsTable, data, columns);
-      table.on("tableBuilt", function() {R.utilities.updateHitsCount(table, R.els.btnHitsModal, R.els.numHits);});
+      table.on("tableBuilt", () => R.utilities.updateHitsCount(table, R.els.btnHitsModal, R.els.numHits));
     }
     R.hitsTable = table;
-  }
+  };
 
-  function buildTopHitsTable() {
+  const buildTopHitsTable = () => {
     const hits = R.hitsTable?.getData?.() ?? [];
     const keys = hits.map(hit => hit.key);
-    const tops = R.tops[R.vs].map(top => ({...top, hits: keys.includes(top.key)}));
+    const tops = (R.tops[R.vs] || []).map(top => ({...top, hits: keys.includes(top.key)}));
     let table = R.topHitsTable;
     if (table) {
-      table.replaceData(tops).then(function () {
+      table.replaceData(tops).then(() => {
         R.utilities.updateHitsCount(table, R.els.btnTopHitsModal, R.els.numTopHits);
       })
     } else {
@@ -967,12 +1021,12 @@
       }
       const columns = [deleteColumn, hitsColumn, ...R.utilities.buildColumns()]
       table = R.utilities.tabulize(R.els.topHitsTable, tops, columns);
-      table.on("tableBuilt", function() {R.utilities.updateHitsCount(table, R.els.btnTopHitsModal, R.els.numTopHits);});
+      table.on("tableBuilt", () => R.utilities.updateHitsCount(table, R.els.btnTopHitsModal, R.els.numTopHits));
     }
     R.topHitsTable = table;
-  }
+  };
 
-  function analyzeData() {
+  const analyzeData = () => {
     const groups = new Map();               // key -> indices[]
     const groupSizeByKey = new Map();       // key -> count
     const bestByKey = new Map();            // key -> { idx, score }
@@ -1017,11 +1071,30 @@
         }
       }
     }
-  }
+  };
 
-  function bindEvents() {
+  const bindEvents = () => {
     R.els.dz = Dropzone.forElement("#dropzone");
-    R.els.dz.on('addedfile', (file) => { if (file) R.io.load(file, { onComplete: initializePage }).catch(R.onError || console.error); });
+    R.els.dz.on('addedfile', (file) => { if (file && !file.name.endsWith('.json.gz')) R.io.load(file, { onComplete: initializePage }).catch(R.onError || console.error); });
+
+    // --- NEW: Session File Upload Handler ---
+    if (R.els.sessionInput) {
+      R.els.sessionInput.addEventListener('change', async (e) => {
+        const file = e.target.files[0];
+        if (file) {
+          try {
+            const sessionData = await R.io.loadSession(file);
+            loadSessionData(sessionData);
+            R.els.uploadPanel.classList.add('d-none');
+            console.log("Session loaded successfully.");
+          } catch (error) {
+            console.error("Error loading session:", error);
+            // Optionally show user feedback here
+          }
+        }
+      });
+    }
+    // --- END NEW HANDLER ---
 
     const bindDropdown = (menu, btn, label) => {
       menu.addEventListener('click', (e) => {
@@ -1067,7 +1140,7 @@
     handleChartEvent(R.els.chartPanel);
 
     const clamp = (v, min, max) => Math.max(min, Math.min(max, v));
-    function showToastAbove(target, { message = 'Done!', delay = 3000, offsetY = 8} = {}) {
+    const showToastAbove = (target, { message = 'Done!', delay = 3000, offsetY = 8} = {}) => {
       const toastEl = document.createElement('div');
       toastEl.className = 'toast shadow';
       toastEl.setAttribute('role', 'status');
@@ -1094,7 +1167,7 @@
       const toast = bootstrap.Toast.getOrCreateInstance(toastEl, {autohide: true, delay});
       toastEl.addEventListener('hidden.bs.toast', () => toastEl.remove());
       toast.show();
-    }
+    };
 
     document.addEventListener('click', (e) => {
       const btn = e.target.closest('[data-action]');
@@ -1163,6 +1236,19 @@
           R.hitsTable.download('csv', `${R.vs}.candidate.hits.csv`)
           break;
         case 'saveSession':
+          const getCircularReplacer = () => {
+            const seen = new WeakSet();
+            return (key, value) => {
+              if (typeof value === "object" && value !== null) {
+                if (seen.has(value)) {
+                  return;
+                }
+                seen.add(value);
+              }
+              return value;
+            };
+          };
+
           const data = {
             config: R.config,
             rows:R.rows,
@@ -1181,7 +1267,7 @@
             library: R.library,
             cards: R.cards
           }
-          const jsonString = JSON.stringify(data, null, 2);
+          const jsonString = JSON.stringify(data, getCircularReplacer(), 2);
           const compressedData = pako.gzip(jsonString, { to: 'string' });
           const blob = new Blob([compressedData], { type: 'application/gzip' });
           const url = URL.createObjectURL(blob);
@@ -1197,28 +1283,35 @@
       }
 
     });
-  }
+  };
 
-  function initializePage(rows) {
+  const initializePage = (rows) => {
+    R.els.uploadPanel.classList.add('d-none');
     const columns = Object.keys(rows[0]);
     R.columns = columns;
     R.countColumns = R.utilities.findColumns(columns, 'count_')
     R.scoreColumns = R.utilities.findColumns(columns, 'zscore_')
     R.smilesColumns = R.utilities.findColumns(columns, '', 'smiles')
     R.libraries = [...new Set((rows ?? []).map(r => r.library))];
-    R.rows = rows.map(row => (row.key = R.utilities.keyForRow(row), row));
+    // Re-keying is only necessary for initial data load, not session load
+    if (!R.rows || R.rows.length === 0) {
+      R.rows = rows.map(row => (row.key = R.utilities.keyForRow(row), row));
+    }
 
     buildSelector();
     analyzeData();
     buildHitsTable();
     buildTopHitsTable();
     renderChart();
-    bindEvents();
-  }
+
+    // Note: bindEvents is already called once in Visualizer.init or upon session load
+    // The bindEvents call at the end of Visualizer.init should be sufficient
+  };
 
   global.Visualizer = {
     async init(input=null) {
       GlobalConfig();
+      bindEvents(); // Bind events early to catch file upload clicks
 
       if (input) {
         R.io.load(input, { onComplete: initializePage }).catch(console.error);
@@ -1226,5 +1319,7 @@
         R.els.uploadPanel.classList.remove('d-none')
       }
     },
+    // Expose loadSessionData if needed for external calls
+    loadSession: loadSessionData
   };
 })(window);
