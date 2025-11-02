@@ -19,9 +19,9 @@
     countColumns: [],
     scoreColumns: [],
     smilesColumns: [],
-    hits: {},
-    tops: {},
-    cards: {},
+    hits: new Map(), // <-- CHANGED: Initialize as a Map to store Set objects
+    tops: new Map(), // <-- CHANGED: Initialize as a Map to store Set objects
+    cards: {}, // <-- R.cards is now a plain object housing R.vs keys
     uniques: [],
     duplicates: {},
     x: null,
@@ -320,10 +320,9 @@
     const saveCardPosition = (card) => {
       const {left, top} = card.state;
       const key = card.getAttribute('id');
+      // FIX: Ensure R.cards[R.vs] exists before saving position
       R.cards[R.vs] ??= {};
-      R.cards[R.vs][key] ??= {};
-      R.cards[R.vs][key].left = left;
-      R.cards[R.vs][key].top = top;
+      R.cards[R.vs][key] = {left: left, top: top};
     };
     const updateConnector = (card) => {
       let x1, y1, x2, y2, left, top;
@@ -395,28 +394,34 @@
         card.addEventListener('dragmove', updateFunction);
         return card;
     };
-    const showCompound = (id, restyle=true) => {
+    const showCompound = (id, restyle=true, addToTop=true) => {
       if (restyle) restylePoints(null, [id], 'add');
       const row = R.uniques.filter(r => r.key === id)[0];
       assembleCompoundCard(row);
-      R.topHitsTable.updateOrAddData([row]).then(() => {
-        updateHitsCount(R.topHitsTable, R.els.btnTopHitsModal, R.els.numTopHits);
-        R.tops[R.vs] = R.topHitsTable.getData();
-      })
+      if (addToTop) {
+        R.tops.get(R.vs).add(row);
+        buildTopHitsTable();
+      }
+      console.log(`after adding card ${id} to ${R.vs}`)
+      console.log(R.tops.get(R.vs))
     };
     const showCompounds = () => {
-      const rows = [...(R.tops[R.vs] ?? []), ...(R.hits[R.vs] ?? [])].filter(row => row.library === R.library);
+      const topsArray = Array.from(R.tops.get(R.vs) || []);
+      const hitsArray = Array.from(R.hits.get(R.vs) || []); // <-- ADDED: Convert Hits Set to Array
+      const rows = [...(topsArray ?? []), ...(hitsArray ?? [])].filter(row => row.library === R.library);
       if (rows.length > 0) {
         restylePoints(rows, null, 'replace');
         for (const row of rows) {
-          showCompound(row.key, false);
+          showCompound(row.key, false, false);
         }
       }
     };
     const removeCompounds = () => {
+      console.log('Removing compound cards')
       const cards = document.querySelectorAll('.compound-card');
       if (cards.length > 0) {
         for (const card of cards) {
+          console.log(`Removing card ${card.getAttribute('id')} from ${R.vs}`)
           removeCompound(card.getAttribute('id'), false)
         }
       }
@@ -428,16 +433,33 @@
         card.remove();
       }
       restylePoints(null, [id], 'remove');
-      if (R.hitsTable.getDataCount() > 0 && R.hitsTable.getRow(id)) {
-        R.hitsTable.deleteRow(id);
-        updateHitsCount(R.hitsTable, R.els.btnHitsModal, R.els.numHits);
-      }
 
-      if (R.topHitsTable.getDataCount() > 0 && R.topHitsTable.getRow(id)) {
-        R.topHitsTable.deleteRow(id);
-        updateHitsCount(R.topHitsTable, R.els.btnTopHitsModal, R.els.numTopHits);
+      if (removeFromTop && R.tops.get(R.vs)) {
+        console.log(`removing card ${id} from top hits`)
+          const topSet = R.tops.get(R.vs);
+          const hitsSet = R.hits.get(R.vs);
+
+          for (const row of topSet) {
+              if (row.key === id) {
+                  topSet.delete(row);
+                  break;
+              }
+          }
+          if (hitsSet) {
+            for (const row of hitsSet) {
+              if (row.key === id) {
+                    topSet.delete(row);
+                    break;
+                }
+            }
+          }
+
+          buildTopHitsTable();
+          buildHitsTable();
+      } else {
+        console.log(`not removing card ${id} from top hits`)
       }
-      if (removeFromTop) R.tops[R.vs] = R.tops[R.vs].filter(row => row.key !== id);
+      console.log(R.tops.get(R.vs))
     };
     const restylePoints = (rows=null, ids=null, mode='add') => {
       const uids = ids || rows?.map(row => row.key);
@@ -517,8 +539,9 @@
       card.style.fontSize = '0.8rem';
       card.style.visibility = visible ? 'visible' : 'hidden';
 
-      const card_position = R.cards[R.vs] ?? {};
-      const position = card_position[key] ?? {};
+      // FIX: Read position from R.cards[R.vs][key]
+      const card_position_vs = R.cards[R.vs] ?? {};
+      const position = card_position_vs[key] ?? {};
 
       let left = position.left;
       let top = position.top;
@@ -539,6 +562,7 @@
           top ??= panel.top + 30;
       }
 
+      // FIX: Ensure R.cards[R.vs] exists before setting the value
       R.cards[R.vs] ??= {}, R.cards[R.vs][key] = {left: left, top: top};
 
       card.style.left = String(Math.round(left)) + 'px';
@@ -641,9 +665,7 @@
         columnDefaults: { hozAlign: "center",  vertAlign: "middle", headerHozAlign: "center" },
       });
     };
-    const updateHitsCount = (table, btn, span) => {
-      const data = table.getData() || [];
-      const n = data.length;
+    const updateHitsCount = (n, btn, span) => {
       if (n > 0) {
         btn.classList.remove('disabled');
         span.innerText = `${n}`;
@@ -651,7 +673,6 @@
         btn.classList.add('disabled');
         span.innerText = '';
       }
-
     };
     const getCompactTimestamp = () => {
       const now = new Date();
@@ -692,6 +713,25 @@
         R[key] = sessionData[key];
       }
     });
+
+    // FIX 5: Convert the loaded R.tops object back into a Map of Sets
+    if (R.tops && !(R.tops instanceof Map)) {
+        const newTopsMap = new Map();
+        for (const [vsKey, dataArray] of Object.entries(R.tops)) {
+            newTopsMap.set(vsKey, new Set(dataArray));
+        }
+        R.tops = newTopsMap;
+    }
+
+    // NEW: Convert the loaded R.hits object back into a Map of Sets
+    if (R.hits && !(R.hits instanceof Map)) {
+        const newHitsMap = new Map();
+        for (const [vsKey, dataArray] of Object.entries(R.hits)) {
+            newHitsMap.set(vsKey, new Set(dataArray));
+        }
+        R.hits = newHitsMap;
+    }
+
 
     // 3. Update the UI config forms (since R.config has been loaded)
     populateConfigForm(R.config);
@@ -929,13 +969,10 @@
   };
 
   const buildHitsTable = () => {
-    const data = R.hits[R.vs] || [];
+    const data = Array.from(R.hits.get(R.vs) || []);
     let table = R.hitsTable;
     if (table) {
-      table.replaceData(data).then(() => {
-        R.utilities.updateHitsCount(table, R.els.btnHitsModal, R.els.numHits);
-      });
-
+      table.replaceData(data);
     } else {
       const deleteCol = {
       title: "", width: 46, hozAlign: "center", headerSort: false,
@@ -951,9 +988,22 @@
         e.preventDefault();
         e.stopPropagation();
         const row = cell.getRow();
+        const data = row.getData();
+        const hitsSet = R.hits.get(R.vs); // Get the hits Set
+
+        // NEW: Delete from R.hits Set
+        if (hitsSet) {
+            for (const hitRow of hitsSet) {
+                if (hitRow.key === data.key) {
+                    hitsSet.delete(hitRow);
+                    break;
+                }
+            }
+        }
+
         row.delete();
         R.utilities.updateHitsCount(table, R.els.btnHitsModal, R.els.numHits);
-        const data = cell.getRow().getData();
+
         data.hits = false;
         R.topHitsTable.updateData([data]);
         const key = row.getData().key;
@@ -966,20 +1016,18 @@
     };
       const columns = [deleteCol, ...R.utilities.buildColumns()];
       table = R.utilities.tabulize(R.els.hitsTable, data, columns);
-      table.on("tableBuilt", () => R.utilities.updateHitsCount(table, R.els.btnHitsModal, R.els.numHits));
     }
     R.hitsTable = table;
+    R.utilities.updateHitsCount(data.length, R.els.btnHitsModal, R.els.numHits)
   };
 
   const buildTopHitsTable = () => {
     const hits = R.hitsTable?.getData?.() ?? [];
     const keys = hits.map(hit => hit.key);
-    const tops = (R.tops[R.vs] || []).map(top => ({...top, hits: keys.includes(top.key)}));
+    const tops = Array.from(R.tops.get(R.vs) || []).map(top => ({...top, hits: keys.includes(top.key)}));
     let table = R.topHitsTable;
     if (table) {
-      table.replaceData(tops).then(() => {
-        R.utilities.updateHitsCount(table, R.els.btnTopHitsModal, R.els.numTopHits);
-      })
+      table.replaceData(tops)
     } else {
       const deleteColumn = {
         title: "", width: 46, hozAlign: "center", headerSort: false,
@@ -995,10 +1043,10 @@
           e.stopPropagation();
           const row = cell.getRow();
           row.delete();
-          R.utilities.updateHitsCount(table, R.els.btnTopHitsModal, R.els.numTopHits);
+          R.utilities.updateHitsCount(table.getDataCount(), R.els.btnTopHitsModal, R.els.numTopHits);
           const key = cell.getRow().getData().key
           R.utilities.removeCompound(key);
-          R.tops[R.vs] = R.tops[R.vs].filter(row => row.key !== key);
+          // R.tops[R.vs] is handled by removeCompound -> removeCompound logic
         },
       };
       const hitsColumn = { title: "Hits", field: "hits", formatter:"tickCross",
@@ -1007,23 +1055,32 @@
           const next = !Boolean(cell.getValue());
           cell.setValue(next, true);
           const data = cell.getRow().getData();
+          const hitsSet = R.hits.get(R.vs) ?? R.hits.set(R.vs, new Set()).get(R.vs); // Get or init Set
+
           const table = R.hitsTable;
+          console.log(`icon clicked, next = ${next}`)
           if (next) {
-            table.updateData([data]).then( () => {
-              R.utilities.updateHitsCount(R.hitsTable, R.els.btnHitsModal, R.els.numHits);
+            table.updateOrAddData([data]).then( () => {
+              hitsSet.add(data);
+              R.utilities.updateHitsCount(R.hitsTable.getDataCount(), R.els.btnHitsModal, R.els.numHits);
             })
           } else {
             table.deleteRow(data.key);
-            R.utilities.updateHitsCount(R.hitsTable, R.els.btnHitsModal, R.els.numHits);
+            for (const row of hitsSet) {
+                if (row.key === data.key) {
+                    hitsSet.delete(row);
+                    break;
+                }
+            }
+            R.utilities.updateHitsCount(R.hitsTable.getDataCount(), R.els.btnHitsModal, R.els.numHits);
           }
-          // R.utilities.updateHitsCount(table, R.els.btnTopHitsModal, R.els.numTopHits);
         }
       }
       const columns = [deleteColumn, hitsColumn, ...R.utilities.buildColumns()]
       table = R.utilities.tabulize(R.els.topHitsTable, tops, columns);
-      table.on("tableBuilt", () => R.utilities.updateHitsCount(table, R.els.btnTopHitsModal, R.els.numTopHits));
     }
     R.topHitsTable = table;
+    R.utilities.updateHitsCount(tops.length, R.els.btnTopHitsModal, R.els.numTopHits);
   };
 
   const analyzeData = () => {
@@ -1059,18 +1116,34 @@
     R.duplicates = Object.fromEntries([...groups.entries()]
       .filter(([, idxs]) => idxs.length >= 2).map(([k, idxs]) => [k, idxs.slice()]));
 
-    if (!Object.hasOwn(R.tops, R.vs)) {
-      R.tops[R.vs] = [];
-      const tops = {};
-      for (const row of R.uniques) (tops[row.library] ??= []).push(row);
-      for (const v of Object.values(tops)) {
+    // FIX 1: If R.tops already exists for the new R.vs, clear it to force recalculation.
+    // This is vital when the axis changes.
+    if (R.tops.has(R.vs)) {
+        // Only clear the set if it already exists to be rebuilt
+        R.tops.get(R.vs).clear();
+    } else {
+        // FIX 1: Initialize the R.tops Map entry as a new Set
+        R.tops.set(R.vs, new Set());
+    }
+
+    // Check for calculated tops only if the set is empty (or was just initialized/cleared)
+    if (R.tops.get(R.vs).size === 0) {
+      const topsSet = R.tops.get(R.vs); // Get the reference to the Set
+      const topsByLibrary = {};
+
+      for (const row of R.uniques) (topsByLibrary[row.library] ??= []).push(row);
+
+      for (const v of Object.values(topsByLibrary)) {
         const top = v.filter(a => (a.axis === 6) && (norm(a?.[R.x]) >= 0.3))
           .sort((a, b) => norm(b?.[R.x]) - norm(a?.[R.x])).slice(0, R.config.nTopHits);
         for (const t of top) {
-          R.tops[R.vs].push(t);
+          topsSet.add(t); // FIX 1: Add to the Set
         }
       }
     }
+
+    // NEW: Ensure R.hits has a Set for the current R.vs key
+    R.hits.set(R.vs, R.hits.get(R.vs) ?? new Set());
   };
 
   const bindEvents = () => {
@@ -1116,8 +1189,10 @@
         analyzeData();
         buildHitsTable();
         buildTopHitsTable();
+
         renderChart();
         R.utilities.removeCompounds();
+
         if (R.library !== 'All') R.utilities.showCompounds();
       });
     }
@@ -1177,6 +1252,8 @@
       const key = btn.getAttribute('data-key');
       let row = R.uniques.filter(r => r.key === key)[0];
 
+      const hitsSet = R.hits.get(R.vs) ?? R.hits.set(R.vs, new Set()).get(R.vs); // Get or init Hits Set
+
       switch (action) {
         case 'open-encoding': {
           let smiles = R.utilities.getSMILES(row);
@@ -1202,15 +1279,23 @@
         case 'bag': {
           if (btn.classList.contains('bi-bag-fill')) {
             R.hitsTable.deleteRow(key);
+            // NEW: REMOVE from R.hits Set
+            for (const hitRow of hitsSet) {
+                if (hitRow.key === key) {
+                    hitsSet.delete(hitRow);
+                    break;
+                }
+            }
             btn.classList.replace('bi-bag-fill', 'bi-bag');
             btn.classList.remove('text-danger');
           } else {
             R.hitsTable.updateOrAddData([row]);
+            hitsSet.add(row); // NEW: ADD to R.hits Set
             btn.classList.remove('bi-bag');
             btn.classList.add('bi-bag-fill');
             btn.classList.add('text-danger');
           }
-          R.utilities.updateHitsCount(R.hitsTable, R.els.btnHitsModal, R.els.numHits);
+          R.utilities.updateHitsCount(R.hitsTable.getDataCount(), R.els.btnHitsModal, R.els.numHits);
           break;
         }
         case 'copy': {
@@ -1249,6 +1334,16 @@
             };
           };
 
+          // FIX 4: Convert R.tops Map of Sets back to a plain object of arrays for JSON serialization
+          const serializableTops = Object.fromEntries(
+              Array.from(R.tops.entries()).map(([vsKey, rowSet]) => [vsKey, Array.from(rowSet)])
+          );
+          // NEW: Convert R.hits Map of Sets back to a plain object of arrays
+          const serializableHits = Object.fromEntries(
+              Array.from(R.hits.entries()).map(([vsKey, rowSet]) => [vsKey, Array.from(rowSet)])
+          );
+
+
           const data = {
             config: R.config,
             rows:R.rows,
@@ -1257,15 +1352,15 @@
             countColumns: R.countColumns,
             scoreColumns: R.scoreColumns,
             smilesColumns: R.smilesColumns,
-            hits: R.hits,
-            tops: R.tops,
+            hits: serializableHits, // Use the serializable version
+            tops: serializableTops, // Use the serializable version
             uniques: R.uniques,
             duplicates: R.duplicates,
             x: R.x,
             y: R.y,
             vs: R.vs,
             library: R.library,
-            cards: R.cards
+            cards: R.cards // This is already a nested object (R.cards[R.vs][key])
           }
           const jsonString = JSON.stringify(data, getCircularReplacer(), 2);
           const compressedData = pako.gzip(jsonString, { to: 'string' });
