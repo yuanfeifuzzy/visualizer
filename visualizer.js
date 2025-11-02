@@ -21,6 +21,7 @@
     smilesColumns: [],
     hits: {},
     tops: {},
+    cards: {},
     uniques: [],
     duplicates: {},
     x: null,
@@ -29,7 +30,6 @@
     library: null,
     hitsTable: null,
     topHitsTable: null,
-    cards: {}
   };
 
   const q = id => R.root.getElementById(id);
@@ -110,7 +110,7 @@
   R.els = {
     btnHitsModal         : q('btnHitsModal'),
     btnTopHitsModal      : q('btnTopHitsModal'),
-    btnEqualAxis         : q('btnEqualAxis'),
+    btnSaveSession         : q('btnSaveSession'),
     switchers            : q('switchers'),
     selectors            : q('selectors'),
     btnX                 : q('btnX'),
@@ -222,9 +222,9 @@
         return String(row.compound);
       }
         return [String(row.library ?? ''), ...R.smilesColumns.map(c => String(row?.[c] ?? ''))]
-          .join('|').replace(/\s+/g, '')        // Remove all whitespace
-          .replace(/[^a-zA-Z0-9_-]/g, '_') // Replace all non-safe characters with an underscore
-          .replace(/^[0-9_-]/, 'id$&');
+          .join('|').replace(/\s+/g, '')  // Remove all whitespace
+          .replace(/[^a-zA-Z0-9_-]/g, '') // Remove all non-safe characters
+          .replace(/^[0-9_-]/, '');       // Remove leading numbers and underscores
     };
     const getSMILES = (row) => Object.entries(R.config.render).filter(([k, v]) => v).map(([k]) => row?.[k] ?? '');
     function ClientXY(id) {
@@ -600,9 +600,9 @@
         });
       }
       const counts = {title: 'Count', columns: []};
-      for (const c of R.countColumns) {counts.columns.push({title: c.replace('count_', ''), field: c})}
+      for (const c of R.countColumns) {counts.columns.push({title: c.replace('count_', ''), field: c, titleDownload: c})}
       const scores = {title: 'z-score', columns: []};
-      for (const c of R.scoreColumns) {scores.columns.push({title: c.replace('zscore_', ''), field: c})}
+      for (const c of R.scoreColumns) {scores.columns.push({title: c.replace('zscore_', ''), field: c, titleDownload: c})}
       const columns = [{title: 'Library', field: 'library'}, {title: 'Encodings', field: 'copies'}, smiles, counts, scores]
 
       if (R.columns.includes('history_hits')) {
@@ -634,11 +634,22 @@
       }
 
     }
+    const getCompactTimestamp = () => {
+      const now = new Date();
+      const pad = (num) => String(num).padStart(2, '0');
+      const mm = pad(now.getMonth() + 1);
+      const dd = pad(now.getDate());
+      const yyyy = now.getFullYear();
+      const hh = pad(now.getHours());
+      const min = pad(now.getMinutes());
+      const ss = pad(now.getSeconds());
+      return `${mm}${dd}${yyyy}${hh}${min}${ss}`;
+    }
 
     return { findColumns, assembleCompoundCard, assembleCompoundName, getSMILES, assemblePlainText,
              assembleKV, assembleCountScore, assembleHoverText, alignModebarWithLegend,
              buildColumns, keyForRow, tabulize, updateHitsCount,
-             removeCompounds, removeCompound, showCompound, showCompounds
+             removeCompounds, removeCompound, showCompound, showCompounds, getCompactTimestamp
            };
   })();
 
@@ -676,8 +687,7 @@
     buildOptions(R.els.ySel, scoreColumns, 'Y', y, R.els.btnY)
     buildOptions(R.els.librarySel, ['All', ...R.libraries], 'Library', 'All', R.els.btnLibrary)
     R.els.selectors.classList.remove('d-none')
-    R.els.btnEqualAxis.classList.add('disabled');
-    R.vs = `${x.replace('zscore_', '')}.vs.{${y.replace('zscore_', '')}`
+    R.vs = `${x.replace('zscore_', '')}.vs.${y.replace('zscore_', '')}`
   }
 
   function squareChart() {
@@ -723,7 +733,6 @@
   function handleChartEvent(gd) {
     if (R.library !== 'All') {
       R.utilities.alignModebarWithLegend();
-      R.els.btnEqualAxis.classList.remove('disabled')
 
       gd.removeAllListeners?.('plotly_click');
       gd.on('plotly_click', ev => {
@@ -731,8 +740,6 @@
         const card = document.querySelector(`#${CSS.escape(id)}.card`)
         card ? R.utilities.removeCompound(id) : R.utilities.showCompound(id);
       });
-    } else {
-      R.els.btnEqualAxis.classList.add('disabled')
     }
   }
 
@@ -885,12 +892,13 @@
                         </button>`,       // or Font Awesome: <i class="fa fa-trash"></i>
       cellClick: (e, cell) => {
         const btn = e.target.closest('button[data-action="del"]');
+        const table = R.hitsTable;
         if (!btn) return;
         e.preventDefault();
         e.stopPropagation();
         const row = cell.getRow();
         row.delete();
-        R.utilities.updateHitsCount();
+        R.utilities.updateHitsCount(table, R.els.btnHitsModal, R.els.numHits);
         const data = cell.getRow().getData();
         data.hits = false;
         R.topHitsTable.updateData([data]);
@@ -912,7 +920,7 @@
   function buildTopHitsTable() {
     const hits = R.hitsTable?.getData?.() ?? [];
     const keys = hits.map(hit => hit.key);
-    const tops = Object.values(R.tops[R.vs]).flat().map(top => ({...top, hits: keys.includes(top.key)}));
+    const tops = R.tops[R.vs].map(top => ({...top, hits: keys.includes(top.key)}));
     let table = R.topHitsTable;
     if (table) {
       table.replaceData(tops).then(function () {
@@ -934,8 +942,9 @@
           const row = cell.getRow();
           row.delete();
           R.utilities.updateHitsCount(table, R.els.btnTopHitsModal, R.els.numTopHits);
-          R.utilities.removeCompound(cell.getRow().getData().key);
-          R.tops[R.vs] = R.topHitsTable.getData();
+          const key = cell.getRow().getData().key
+          R.utilities.removeCompound(key);
+          R.tops[R.vs] = R.tops[R.vs].filter(row => row.key !== key);
         },
       };
       const hitsColumn = { title: "Hits", field: "hits", formatter:"tickCross",
@@ -946,14 +955,14 @@
           const data = cell.getRow().getData();
           const table = R.hitsTable;
           if (next) {
-            table.updateOrAddRow(data.key, data).then( () => {
-              R.utilities.updateHitsCount();
-              R.tops[R.vs] = table.getData();
+            table.updateData([data]).then( () => {
+              R.utilities.updateHitsCount(R.hitsTable, R.els.btnHitsModal, R.els.numHits);
             })
           } else {
             table.deleteRow(data.key);
-            R.utilities.updateHitsCount();
+            R.utilities.updateHitsCount(R.hitsTable, R.els.btnHitsModal, R.els.numHits);
           }
+          // R.utilities.updateHitsCount(table, R.els.btnTopHitsModal, R.els.numTopHits);
         }
       }
       const columns = [deleteColumn, hitsColumn, ...R.utilities.buildColumns()]
@@ -1057,10 +1066,6 @@
 
     handleChartEvent(R.els.chartPanel);
 
-    R.els.btnEqualAxis.addEventListener('click', () => {
-      squareChart();
-    })
-
     const clamp = (v, min, max) => Math.max(min, Math.min(max, v));
     function showToastAbove(target, { message = 'Done!', delay = 3000, offsetY = 8} = {}) {
       const toastEl = document.createElement('div');
@@ -1149,6 +1154,45 @@
           break;
         case 'close':
           R.utilities.removeCompound(key)
+          break;
+        case 'downloadTopHits':
+          console.log(R.vs)
+          R.topHitsTable.download('csv', `${R.vs}.top.hits.csv`)
+          break;
+        case 'downloadHits':
+          R.hitsTable.download('csv', `${R.vs}.candidate.hits.csv`)
+          break;
+        case 'saveSession':
+          const data = {
+            config: R.config,
+            rows:R.rows,
+            columns: R.columns,
+            libraries: R.libraries,
+            countColumns: R.countColumns,
+            scoreColumns: R.scoreColumns,
+            smilesColumns: R.smilesColumns,
+            hits: R.hits,
+            tops: R.tops,
+            uniques: R.uniques,
+            duplicates: R.duplicates,
+            x: R.x,
+            y: R.y,
+            vs: R.vs,
+            library: R.library,
+            cards: R.cards
+          }
+          const jsonString = JSON.stringify(data, null, 2);
+          const compressedData = pako.gzip(jsonString, { to: 'string' });
+          const blob = new Blob([compressedData], { type: 'application/gzip' });
+          const url = URL.createObjectURL(blob);
+          const link = document.createElement('a');
+          link.href = url;
+          link.download = `VEP.session.${R.utilities.getCompactTimestamp()}.json.gz`;
+          link.style.display = 'none';
+          document.body.appendChild(link);
+          link.click();
+          document.body.removeChild(link);
+          URL.revokeObjectURL(url);
           break;
       }
 

@@ -58,8 +58,8 @@
         </span>
       </button>
 
-      <button type="button" class="btn btn-light py-0 ms-4" title="Set equal axes (1:1)" id="btnEqualAxis">
-        <i class="bi bi-graph-up"></i>
+      <button type="button" class="btn btn-light py-0 ms-4" title="Save current session" id="btnSaveSession" data-action="saveSession">
+        <i class="bi bi-floppy"></i>
       </button>
       <button type="button" class="btn btn-light py-0 ms-1 me-2" title="Config"
               data-bs-toggle="modal" data-bs-target="#configModal">
@@ -139,7 +139,12 @@
       <div class="modal-content">
         <div class="modal-header">
           <h5 class="modal-title" id="bagModalLabel">Candidate Hits</h5>
-          <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+          <div class="ms-auto d-flex align-items-center">
+            <button type="button" class="btn bg-white me-2" data-action="downloadHits">
+              <i class="bi bi-download text-primary"></i>
+            </button>
+            <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+          </div>
         </div>
         <div class="modal-body">
           <div id="hitsTable"></div>
@@ -154,7 +159,12 @@
       <div class="modal-content">
         <div class="modal-header">
           <h5 class="modal-title" id="topHitsModalLabel">Top Hits</h5>
-          <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+          <div class="ms-auto d-flex align-items-center">
+            <button type="button" class="btn bg-white me-2" data-action="downloadTopHits">
+              <i class="bi bi-download text-primary"></i>
+            </button>
+            <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+          </div>
         </div>
         <div class="modal-body">
           <div id="topHitsTable"></div>
