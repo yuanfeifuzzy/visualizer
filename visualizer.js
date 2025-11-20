@@ -764,7 +764,8 @@
     const scoreColumns = R.scoreColumns;
 
     if (R.x && R.y) {
-      x = R.x; y = R.y;
+      x = R.x;
+      y = R.y;
     } else if (scoreColumns.includes('zscore_NTC')) {
       x = scoreColumns.find(element => element !== 'zscore_NTC');
       y = 'zscore_NTC';
@@ -1084,51 +1085,42 @@
   };
 
   const analyzeData = () => {
-    const groups = new Map();               // key -> indices[]
-    const groupSizeByKey = new Map();       // key -> count
-    const bestByKey = new Map();            // key -> { idx, score }
-
     const norm = v => {
       const n = Number(v);
       return Number.isFinite(n) ? n : -Infinity; // treat missing/NaN as worst
     };
 
-    R.rows.forEach((row) => {
-      const k = String(row?.key ?? "");
-      if (!groups.has(k)) groups.set(k, []);
-      groups.get(k).push(row.index);
+    if (R.uniques.length === 0) {
+      const groups = new Map();               // key -> indices[]
+      const groupSizeByKey = new Map();       // key -> count
+      const bestByKey = new Map();            // key -> { idx, score }
 
-      groupSizeByKey.set(k, (groupSizeByKey.get(k) ?? 0) + 1);
+      R.rows.forEach((row) => {
+        const k = String(row?.key ?? "");
+        if (!groups.has(k)) groups.set(k, []);
+        groups.get(k).push(row.index);
 
-      const s = norm(row?.[R.x]);
-      const prev = bestByKey.get(k);
-      if (!prev || s > prev.score /* tie: keep first seen */) {
-        bestByKey.set(k, { idx: row.index, score: s });
+        groupSizeByKey.set(k, (groupSizeByKey.get(k) ?? 0) + 1);
+
+        const s = norm(row?.[R.x]);
+        const prev = bestByKey.get(k);
+        if (!prev || s > prev.score /* tie: keep first seen */) {
+          bestByKey.set(k, { idx: row.index, score: s });
+        }
+      });
+
+      R.uniques = [];
+      for (const [k, info] of bestByKey.entries()) {
+        const copies = groupSizeByKey.get(k) ?? 0;
+        R.uniques.push({ ...R.rows[info.idx], copies });
       }
-    });
 
-    R.uniques = [];
-    for (const [k, info] of bestByKey.entries()) {
-      const copies = groupSizeByKey.get(k) ?? 0;
-      R.uniques.push({ ...R.rows[info.idx], copies });
+      R.duplicates = Object.fromEntries([...groups.entries()]
+        .filter(([, idxs]) => idxs.length >= 2).map(([k, idxs]) => [k, idxs.slice()]));
     }
 
-    R.duplicates = Object.fromEntries([...groups.entries()]
-      .filter(([, idxs]) => idxs.length >= 2).map(([k, idxs]) => [k, idxs.slice()]));
-
-    // FIX 1: If R.tops already exists for the new R.vs, clear it to force recalculation.
-    // This is vital when the axis changes.
-    if (R.tops.has(R.vs)) {
-        // Only clear the set if it already exists to be rebuilt
-        R.tops.get(R.vs).clear();
-    } else {
-        // FIX 1: Initialize the R.tops Map entry as a new Set
-        R.tops.set(R.vs, new Set());
-    }
-
-    // Check for calculated tops only if the set is empty (or was just initialized/cleared)
-    if (R.tops.get(R.vs).size === 0) {
-      const topsSet = R.tops.get(R.vs); // Get the reference to the Set
+    if (!R.tops.has(R.vs)) {
+      const topsSet = new Set();
       const topsByLibrary = {};
 
       for (const row of R.uniques) (topsByLibrary[row.library] ??= []).push(row);
@@ -1140,9 +1132,9 @@
           topsSet.add(t); // FIX 1: Add to the Set
         }
       }
+      R.tops.set(R.vs, topsSet);
     }
 
-    // NEW: Ensure R.hits has a Set for the current R.vs key
     R.hits.set(R.vs, R.hits.get(R.vs) ?? new Set());
   };
 
@@ -1150,7 +1142,6 @@
     R.els.dz = Dropzone.forElement("#dropzone");
     R.els.dz.on('addedfile', (file) => { if (file && !file.name.endsWith('.json.gz')) R.io.load(file, { onComplete: initializePage }).catch(R.onError || console.error); });
 
-    // --- NEW: Session File Upload Handler ---
     if (R.els.sessionInput) {
       R.els.sessionInput.addEventListener('change', async (e) => {
         const file = e.target.files[0];
@@ -1167,7 +1158,6 @@
         }
       });
     }
-    // --- END NEW HANDLER ---
 
     const bindDropdown = (menu, btn, label) => {
       menu.addEventListener('click', (e) => {
@@ -1183,6 +1173,7 @@
         link.classList.add('active');
 
         R[label.toLowerCase()] = value;
+        R.vs = `${R.x}.vs.${R.y}`
 
         try { bootstrap.Dropdown.getOrCreateInstance(btn).hide(); } catch (_) {}
 
@@ -1190,8 +1181,9 @@
         buildHitsTable();
         buildTopHitsTable();
 
-        renderChart();
         R.utilities.removeCompounds();
+
+        renderChart();
 
         if (R.library !== 'All') R.utilities.showCompounds();
       });
@@ -1382,13 +1374,12 @@
 
   const initializePage = (rows) => {
     R.els.uploadPanel.classList.add('d-none');
-    const columns = Object.keys(rows[0]);
-    R.columns = columns;
-    R.countColumns = R.utilities.findColumns(columns, 'count_')
-    R.scoreColumns = R.utilities.findColumns(columns, 'zscore_')
-    R.smilesColumns = R.utilities.findColumns(columns, '', 'smiles')
+    R.columns = Object.keys(rows[0]);
+    R.countColumns = R.utilities.findColumns(R.columns, 'count_')
+    R.scoreColumns = R.utilities.findColumns(R.columns, 'zscore_')
+    R.smilesColumns = R.utilities.findColumns(R.columns, '', 'smiles')
     R.libraries = [...new Set((rows ?? []).map(r => r.library))];
-    // Re-keying is only necessary for initial data load, not session load
+
     if (!R.rows || R.rows.length === 0) {
       R.rows = rows.map(row => (row.key = R.utilities.keyForRow(row), row));
     }
@@ -1398,9 +1389,6 @@
     buildHitsTable();
     buildTopHitsTable();
     renderChart();
-
-    // Note: bindEvents is already called once in Visualizer.init or upon session load
-    // The bindEvents call at the end of Visualizer.init should be sufficient
   };
 
   global.Visualizer = {
