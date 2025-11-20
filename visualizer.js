@@ -19,9 +19,9 @@
     countColumns: [],
     scoreColumns: [],
     smilesColumns: [],
-    hits: new Map(), // <-- CHANGED: Initialize as a Map to store Set objects
-    tops: new Map(), // <-- CHANGED: Initialize as a Map to store Set objects
-    cards: {}, // <-- R.cards is now a plain object housing R.vs keys
+    hits: new Map(),
+    tops: new Map(),
+    cards: {},
     uniques: [],
     duplicates: {},
     x: null,
@@ -134,7 +134,7 @@
     numHits              : q('numHits'),
     numTopHits           : q('numTopHits'),
     topHitsTable         : q('topHitsTable'),
-    sessionInput         : q('sessionInput') // Added for session file upload
+    sessionInput         : q('sessionInput')
   }
 
   R.io = (() => {
@@ -161,7 +161,6 @@
       });
     });
 
-    // Function to handle decompression and JSON parsing of a session file
     const loadSession = async (file) => {
       if (!file) throw new Error("No session file provided.");
 
@@ -169,10 +168,8 @@
       let jsonString;
 
       if (isGzip(u8)) {
-        // Decompress GZIP payload using pako
         jsonString = window.pako.ungzip(u8, { to: "string" });
       } else {
-        // Treat as uncompressed JSON file (read text directly)
         jsonString = await file.text();
       }
 
@@ -196,20 +193,17 @@
 
             const u8 = new Uint8Array(await res.arrayBuffer());
             if (!isGzip(u8)) throw new Error("URL ends with .gz but payload is not gzip.");
-            input = window.pako.ungzip(u8, { to: "string" }); // assumes UTF-8
+            input = window.pako.ungzip(u8, { to: "string" });
           } else {
             download = true;
           }
           rows = await papaParse(input, download)
         }
-        // File/Blob
         else if (input instanceof Blob) {
           const u8 = new Uint8Array(await input.arrayBuffer());
           if (isGzip(u8)) {
-            // Note: input for papaParseFile should be the decompressed string, not the Blob
             input = window.pako.ungzip(u8, { to: "string" });
           }
-          // The papaParse function needs the raw string input when not using download: true
           rows = await papaParse(input, false);
         } else {
           throw new Error("load expects a URL string or a File/Blob.");
@@ -219,7 +213,6 @@
         throw err;
       }
     };
-    // Expose loadSession for use in the new input handler
     return { load, loadSession };
   })();
 
@@ -320,43 +313,37 @@
     const saveCardPosition = (card) => {
       const {left, top} = card.state;
       const key = card.getAttribute('id');
-      // FIX: Ensure R.cards[R.vs] exists before saving position
       R.cards[R.vs] ??= {};
       R.cards[R.vs][key] = {left: left, top: top};
     };
     const updateConnector = (card) => {
       let x1, y1, x2, y2, left, top;
 
-      // 1. Get current position from style (set by Draggable during a drag)
       const styleLeft = parseFloat(card.style.left);
       const styleTop = parseFloat(card.style.top);
 
-      // 2. Determine the definitive position for the state update and line drawing:
       if (Number.isFinite(styleLeft) && Number.isFinite(styleTop)) {
         left = styleLeft;
         top = styleTop;
       } else if (card?.state) {
-        ({left, top} = card.state); // Fall back to previously saved state
+        ({left, top} = card.state);
       } else {
         const rect = card.getBoundingClientRect();
         left = rect.left;
         top = rect.top;
       }
 
-      // --- 3. Calculate Line Coordinates ---
-      const rect = card.getBoundingClientRect(); // Re-read rect for line endpoints
+      const rect = card.getBoundingClientRect();
       ({ x1, y1 } = ClientXY(card.getAttribute('id')));
 
       x2 = rect.left + rect.width / 2;
       y2 = rect.bottom;
 
-      // --- 4. Update DOM Line Attributes ---
       card.line.setAttribute('x1', x1);
       card.line.setAttribute('y1', y1);
       card.line.setAttribute('x2', x2);
       card.line.setAttribute('y2', y2);
 
-      // --- 5. Update State and Save ---
       card.state = {left: left, top: top, x1: x1, y1: y1, x2: x2, y2: y2}
       saveCardPosition(card);
     };
@@ -365,7 +352,7 @@
       card.removeEventListener('dragmove', card.updateFunction);
       card.line.remove();
       card.line = null;
-      card.updateFunction = null; // Assuming you store the function reference
+      card.updateFunction = null;
     };
     const attachConnector = (card) => {
         let ov = document.getElementById('plot-overlay');
@@ -407,7 +394,7 @@
     };
     const showCompounds = () => {
       const topsArray = Array.from(R.tops.get(R.vs) || []);
-      const hitsArray = Array.from(R.hits.get(R.vs) || []); // <-- ADDED: Convert Hits Set to Array
+      const hitsArray = Array.from(R.hits.get(R.vs) || []);
       const rows = [...(topsArray ?? []), ...(hitsArray ?? [])].filter(row => row.library === R.library);
       if (rows.length > 0) {
         restylePoints(rows, null, 'replace');
@@ -481,7 +468,7 @@
           } else if (mode === 'remove') {
             const rm = new Set(matches);
             selected = selected.filter(j => !rm.has(j));
-          } else { // 'replace'
+          } else {
             selected = matches;
           }
 
@@ -539,7 +526,6 @@
       card.style.fontSize = '0.8rem';
       card.style.visibility = visible ? 'visible' : 'hidden';
 
-      // FIX: Read position from R.cards[R.vs][key]
       const card_position_vs = R.cards[R.vs] ?? {};
       const position = card_position_vs[key] ?? {};
 
@@ -548,10 +534,10 @@
 
       if (left === undefined || top === undefined) {
           const panel = R.els.chartPanel.getBoundingClientRect();
-          const { x1, y1 } = ClientXY(row.key); // Assuming ClientXY is defined elsewhere
-          const START_BOUND = panel.left + 65; // 5 + 60
-          const STOP_BOUND = panel.right - 10; // 5 + 5
-          const HALF_WIDTH = width / 2; // Assuming 'width' is available
+          const { x1, y1 } = ClientXY(row.key);
+          const START_BOUND = panel.left + 65;
+          const STOP_BOUND = panel.right - 10;
+          const HALF_WIDTH = width / 2;
 
           left ??= x1 - HALF_WIDTH;
           if (left < START_BOUND) {
@@ -562,7 +548,6 @@
           top ??= panel.top + 30;
       }
 
-      // FIX: Ensure R.cards[R.vs] exists before setting the value
       R.cards[R.vs] ??= {}, R.cards[R.vs][key] = {left: left, top: top};
 
       card.style.left = String(Math.round(left)) + 'px';
@@ -694,14 +679,11 @@
   })();
 
   const loadSessionData = (sessionData) => {
-    // 1. Sanity checks (ensure essential properties exist)
     if (!sessionData || !Array.isArray(sessionData.rows) || !sessionData.vs) {
       console.error("Invalid session file format.");
       return;
     }
 
-    // 2. Merge all key properties from the session data into R
-    // We explicitly overwrite only the state variables we want to restore
     const stateKeys = [
       'config', 'rows', 'columns', 'libraries', 'countColumns', 'scoreColumns',
       'smilesColumns', 'hits', 'tops', 'uniques', 'duplicates',
@@ -714,7 +696,6 @@
       }
     });
 
-    // FIX 5: Convert the loaded R.tops object back into a Map of Sets
     if (R.tops && !(R.tops instanceof Map)) {
         const newTopsMap = new Map();
         for (const [vsKey, dataArray] of Object.entries(R.tops)) {
@@ -723,7 +704,6 @@
         R.tops = newTopsMap;
     }
 
-    // NEW: Convert the loaded R.hits object back into a Map of Sets
     if (R.hits && !(R.hits instanceof Map)) {
         const newHitsMap = new Map();
         for (const [vsKey, dataArray] of Object.entries(R.hits)) {
@@ -732,12 +712,8 @@
         R.hits = newHitsMap;
     }
 
-
-    // 3. Update the UI config forms (since R.config has been loaded)
     populateConfigForm(R.config);
-    GlobalConfig(R.config); // Re-apply global styles
-
-    // 4. Proceed with page initialization using the loaded state
+    GlobalConfig(R.config);
     initializePage(R.rows);
   };
 
@@ -783,52 +759,12 @@
     R.vs = `${x.replace('zscore_', '')}.vs.${y.replace('zscore_', '')}`
   };
 
-  const squareChart = () => {
-    const gd = R.els.chartPanel;
-    // 1) Collect x/y from current traces
-    const xs = [];
-    const ys = [];
-    (gd.data || []).forEach((t, i) => {
-      if (t.visible === 'legendonly') return;
-      if (!t.x || !t.y) return;
-      const xarr = (Array.isArray(t.x) ? t.x : [t.x]).map(Number).filter(Number.isFinite);
-      const yarr = (Array.isArray(t.y) ? t.y : [t.y]).map(Number).filter(Number.isFinite);
-      xs.push(...xarr);
-      ys.push(...yarr);
-    });
-
-    if (!xs.length || !ys.length) return; // nothing to do
-
-    // 2) Common [lo, hi] + padding
-    let lo = Math.min(Math.min(...xs), Math.min(...ys));
-    let hi = Math.max(Math.max(...xs), Math.max(...ys));
-    const span = Math.max(hi - lo, 1);         // avoid zero span
-    const pad = span * 0.01;
-    lo -= pad;
-    hi += pad;
-
-    // 3) Prepare/merge shapes: keep others, replace our "diagonal" if present
-    const current = (gd.layout && gd.layout.shapes) ? gd.layout.shapes.slice() : [];
-    const others = current.filter(s => s._tag !== 'diag_y_eq_x'); // custom tag to find ours
-    const diagonal = {type: 'line', xref: 'x', yref: 'y', x0: lo, y0: lo, x1: hi, y1: hi,
-      line: { dash: 'dot', width: 1, color: '#d7d7d7' }, layer: 'above',
-      _tag: 'diag_y_eq_x' // harmless custom key to identify later
-    };
-
-    // 4) Apply ranges + shapes
-    Plotly.relayout(gd, {
-      'xaxis.range': [lo, hi],
-      'yaxis.range': [lo, hi],
-      shapes: [...others, diagonal]
-    });
-  };
-
   const handleChartEvent = (gd) => {
     if (R.library !== 'All') {
       R.utilities.alignModebarWithLegend();
 
       gd.removeAllListeners?.('plotly_click');
-      if (typeof gd.on === 'function') { // ⬅️ Defensive check added here
+      if (typeof gd.on === 'function') {
           gd.on('plotly_click', ev => {
             const id = ev.points[0].id;
             const card = document.querySelector(`#${CSS.escape(id)}.card`)
@@ -909,17 +845,14 @@
         const axisKey = k => k.replace(/^([xy])(.*)$/, '$1axis$2');
         const trace = makeTrace(library, subset, 10);
 
-        // Map to subplot axis pair: 1st subplot uses 'x','y'; others use 'x2','y2',...
         const ax = i + 1;
         trace.xaxis = (ax === 1) ? 'x' : `x${ax}`;
         trace.yaxis = (ax === 1) ? 'y' : `y${ax}`;
         traces.push(trace);
 
-        // facet coordinates
-        const rIdx = Math.floor(i / columns);   // 0..rows-1
-        const cIdx = i % columns;               // 0..cols-1
+        const rIdx = Math.floor(i / columns);
+        const cIdx = i % columns;
 
-        // Tick label visibility rules
         const isLastRow = (rIdx === rows - 1);
         const isSecondLastRow = (rIdx === rows - 2);
         const lastRowIncomplete = (lastRowCount > 0 && lastRowCount < columns);
@@ -933,7 +866,6 @@
           showticklabels: !!showYticks, range: [yMin - yOffset, yMax + yOffset], ...axisDefault
         });
 
-        // Add in-panel title: top-left of the facet
         layout.annotations.push({
           text: String(library), xref: `${trace.xaxis} domain`, yref: `${trace.yaxis} domain`,
           x: 0.5, y: 0.9, xanchor: 'center', yanchor: 'bottom', showarrow: false, bordercolor: '#fff',
@@ -941,7 +873,6 @@
         });
       }
 
-      // Single global axis labels (centered), per your face-grid preference
       layout.annotations.push(
         {
           text: `${x.replace('zscore_', '')} (z-score)`,
@@ -960,8 +891,31 @@
       traces.push(makeTrace('Di-sython', rows.filter(r => ([3, 4, 5].includes(r.axis)))))
       traces.push(makeTrace('Tri-sython', rows.filter(r => (r.axis === 6))))
       const axisDefault = {zeroline: false, showgrid: false, mirror: true, linecolor: '#939393', linewidth: 1, nticks: 5}
-      layout.xaxis = {title: {text: `${x.replace('zscore_', '')} (z-score)`}, ...axisDefault};
-      layout.yaxis = {title: {text: `${y.replace('zscore_', '')} (z-score)`}, ...axisDefault};
+
+      const xs = rows.map(r => r?.[x]).filter(Number.isFinite);
+      const ys = rows.map(r => r?.[y]).filter(Number.isFinite);
+
+      if (xs.length > 0 && ys.length > 0) {
+        let lo = Math.min(Math.min(...xs), Math.min(...ys));
+        let hi = Math.max(Math.max(...xs), Math.max(...ys));
+        const span = Math.max(hi - lo, 1);
+        const pad = span * 0.01;
+        lo -= pad;
+        hi += pad;
+
+        const range = [lo, hi];
+        layout.xaxis = {title: {text: `${x.replace('zscore_', '')} (z-score)`}, range: range, ...axisDefault};
+        layout.yaxis = {title: {text: `${y.replace('zscore_', '')} (z-score)`}, range: range, ...axisDefault};
+
+        layout.shapes = [{
+            type: 'line', xref: 'x', yref: 'y', x0: lo, y0: lo, x1: hi, y1: hi,
+            line: { dash: 'dot', width: 1, color: '#d7d7d7' }, layer: 'below',
+            _tag: 'diag_y_eq_x'
+        }];
+      } else {
+        layout.xaxis = {title: {text: `${x.replace('zscore_', '')} (z-score)`}, ...axisDefault};
+        layout.yaxis = {title: {text: `${y.replace('zscore_', '')} (z-score)`}, ...axisDefault};
+      }
     }
 
     Plotly.react(R.els.chartPanel, traces.filter(r => r), layout, config)
@@ -979,9 +933,7 @@
       title: "", width: 46, hozAlign: "center", headerSort: false,
       titleFormatter: () => `<i class="bi bi-trash text-danger" aria-label="Delete row"></i>`,
       formatter: () => `<button type="button" class="btn btn-sm btn-outline-danger" 
-                          title="Delete row" data-action="del">
-                          <i class="bi bi-trash"></i>
-                        </button>`,       // or Font Awesome: <i class="fa fa-trash"></i>
+                          title="Delete row" data-action="del"><i class="bi bi-trash"></i></button>`,
       cellClick: (e, cell) => {
         const btn = e.target.closest('button[data-action="del"]');
         const table = R.hitsTable;
@@ -990,9 +942,8 @@
         e.stopPropagation();
         const row = cell.getRow();
         const data = row.getData();
-        const hitsSet = R.hits.get(R.vs); // Get the hits Set
+        const hitsSet = R.hits.get(R.vs);
 
-        // NEW: Delete from R.hits Set
         if (hitsSet) {
             for (const hitRow of hitsSet) {
                 if (hitRow.key === data.key) {
@@ -1047,7 +998,6 @@
           R.utilities.updateHitsCount(table.getDataCount(), R.els.btnTopHitsModal, R.els.numTopHits);
           const key = cell.getRow().getData().key
           R.utilities.removeCompound(key);
-          // R.tops[R.vs] is handled by removeCompound -> removeCompound logic
         },
       };
       const hitsColumn = { title: "Hits", field: "hits", formatter:"tickCross",
@@ -1056,7 +1006,7 @@
           const next = !Boolean(cell.getValue());
           cell.setValue(next, true);
           const data = cell.getRow().getData();
-          const hitsSet = R.hits.get(R.vs) ?? R.hits.set(R.vs, new Set()).get(R.vs); // Get or init Set
+          const hitsSet = R.hits.get(R.vs) ?? R.hits.set(R.vs, new Set()).get(R.vs);
 
           const table = R.hitsTable;
           console.log(`icon clicked, next = ${next}`)
@@ -1087,7 +1037,7 @@
   const analyzeData = () => {
     const norm = v => {
       const n = Number(v);
-      return Number.isFinite(n) ? n : -Infinity; // treat missing/NaN as worst
+      return Number.isFinite(n) ? n : -Infinity;
     };
 
     if (R.uniques.length === 0) {
@@ -1129,7 +1079,7 @@
         const top = v.filter(a => (a.axis === 6) && (norm(a?.[R.x]) >= 0.3))
           .sort((a, b) => norm(b?.[R.x]) - norm(a?.[R.x])).slice(0, R.config.nTopHits);
         for (const t of top) {
-          topsSet.add(t); // FIX 1: Add to the Set
+          topsSet.add(t);
         }
       }
       R.tops.set(R.vs, topsSet);
@@ -1153,7 +1103,6 @@
             console.log("Session loaded successfully.");
           } catch (error) {
             console.error("Error loading session:", error);
-            // Optionally show user feedback here
           }
         }
       });
@@ -1244,7 +1193,7 @@
       const key = btn.getAttribute('data-key');
       let row = R.uniques.filter(r => r.key === key)[0];
 
-      const hitsSet = R.hits.get(R.vs) ?? R.hits.set(R.vs, new Set()).get(R.vs); // Get or init Hits Set
+      const hitsSet = R.hits.get(R.vs) ?? R.hits.set(R.vs, new Set()).get(R.vs);
 
       switch (action) {
         case 'open-encoding': {
@@ -1271,7 +1220,6 @@
         case 'bag': {
           if (btn.classList.contains('bi-bag-fill')) {
             R.hitsTable.deleteRow(key);
-            // NEW: REMOVE from R.hits Set
             for (const hitRow of hitsSet) {
                 if (hitRow.key === key) {
                     hitsSet.delete(hitRow);
@@ -1282,7 +1230,7 @@
             btn.classList.remove('text-danger');
           } else {
             R.hitsTable.updateOrAddData([row]);
-            hitsSet.add(row); // NEW: ADD to R.hits Set
+            hitsSet.add(row);
             btn.classList.remove('bi-bag');
             btn.classList.add('bi-bag-fill');
             btn.classList.add('text-danger');
@@ -1326,11 +1274,9 @@
             };
           };
 
-          // FIX 4: Convert R.tops Map of Sets back to a plain object of arrays for JSON serialization
           const serializableTops = Object.fromEntries(
               Array.from(R.tops.entries()).map(([vsKey, rowSet]) => [vsKey, Array.from(rowSet)])
           );
-          // NEW: Convert R.hits Map of Sets back to a plain object of arrays
           const serializableHits = Object.fromEntries(
               Array.from(R.hits.entries()).map(([vsKey, rowSet]) => [vsKey, Array.from(rowSet)])
           );
@@ -1344,15 +1290,15 @@
             countColumns: R.countColumns,
             scoreColumns: R.scoreColumns,
             smilesColumns: R.smilesColumns,
-            hits: serializableHits, // Use the serializable version
-            tops: serializableTops, // Use the serializable version
+            hits: serializableHits,
+            tops: serializableTops,
             uniques: R.uniques,
             duplicates: R.duplicates,
             x: R.x,
             y: R.y,
             vs: R.vs,
             library: R.library,
-            cards: R.cards // This is already a nested object (R.cards[R.vs][key])
+            cards: R.cards
           }
           const jsonString = JSON.stringify(data, getCircularReplacer(), 2);
           const compressedData = pako.gzip(jsonString, { to: 'string' });
@@ -1394,7 +1340,7 @@
   global.Visualizer = {
     async init(input=null) {
       GlobalConfig();
-      bindEvents(); // Bind events early to catch file upload clicks
+      bindEvents();
 
       if (input) {
         R.io.load(input, { onComplete: initializePage }).catch(console.error);
@@ -1402,7 +1348,6 @@
         R.els.uploadPanel.classList.remove('d-none')
       }
     },
-    // Expose loadSessionData if needed for external calls
     loadSession: loadSessionData
   };
 })(window);
