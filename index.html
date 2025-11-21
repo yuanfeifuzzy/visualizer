@@ -192,46 +192,30 @@
         </div>
         <div class="modal-body">
           <form action="" class="row g-3">
-            <!-- Typography -->
-            <div class="col-12 col-md-7">
-              <label for="fontFamily" class="form-label fw-bold">Font</label>
-              <select id="fontFamily" class="form-select">
-                <option value="system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif">System UI</option>
-                <option value="Inter, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif">Inter</option>
-                <option value="Roboto, Helvetica, Arial, sans-serif">Roboto</option>
-                <option value="Arial, Helvetica, sans-serif">Arial</option>
-                <option value="'Times New Roman', Times, serif">Times New Roman</option>
-                <option value="'Courier New', Courier, monospace">Courier New</option>
-              </select>
-            </div>
-            <div class="col-6 col-md-5">
+            <div class="col-6 col-md-4">
               <label for="fontSize" class="form-label fw-bold">Font size (px)</label>
               <div class="input-group">
-                <input id="fontSize" type="number" class="form-control" min="8" max="48" step="1" value="12">
+                <input id="fontSize" type="number" class="form-control" min="8" max="48" value="12">
                 <span class="input-group-text">px</span>
               </div>
             </div>
 
-            <div class="col-12 col-md-7">
-              <label for="fontFamilyCC" class="form-label fw-bold">Compound Card Font</label>
-              <select id="fontFamilyCC" class="form-select">
-                <option value="system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif">System UI</option>
-                <option value="Inter, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif">Inter</option>
-                <option value="Roboto, Helvetica, Arial, sans-serif">Roboto</option>
-                <option value="Arial, Helvetica, sans-serif">Arial</option>
-                <option value="'Times New Roman', Times, serif">Times New Roman</option>
-                <option value="'Courier New', Courier, monospace">Courier New</option>
-              </select>
-            </div>
-            <div class="col-6 col-md-5">
-              <label for="fontSizeCC" class="form-label fw-bold">Compound Card Font size (px)</label>
+            <div class="col-12 col-md-4">
+              <label for="structWidth" class="form-label fw-bold">Structure Width (px)</label>
               <div class="input-group">
-                <input id="fontSizeCC" type="number" class="form-control" min="8" max="48" step="1" value="10">
+                <input id="structWidth" type="number" class="form-control" min="50" max="500" step="10" value="200">
                 <span class="input-group-text">px</span>
               </div>
             </div>
 
-            <!-- Structure rendering toggles -->
+            <div class="col-12 col-md-4">
+              <label for="structHeight" class="form-label fw-bold">Structure Height (px)</label>
+              <div class="input-group">
+                <input id="structHeight" type="number" class="form-control" min="50" max="500" step="10" value="100">
+                <span class="input-group-text">px</span>
+              </div>
+            </div>
+
             <div class="col-12">
               <label class="form-label mb-1 fw-bold">Structure rendering</label>
               <div class="row gy-2">
@@ -262,29 +246,20 @@
               </div>
             </div>
 
-            <!-- Structure size -->
-            <div class="col-12 col-md-4">
-              <label for="structWidth" class="form-label fw-bold">Structure width (px)</label>
+            <div class="col-12 col-md-6">
+              <label for="zscoreCutoff" class="form-label fw-bold"><i>z</i> score cutoff</label>
               <div class="input-group">
-                <input id="structWidth" type="number" class="form-control" min="50" max="500" step="10" value="200">
+                <input id="zscoreCutoff" type="number" class="form-control" value="1.0">
                 <span class="input-group-text">px</span>
               </div>
             </div>
-            <div class="col-12 col-md-4">
-              <label for="structHeight" class="form-label fw-bold">Structure height (px)</label>
-              <div class="input-group">
-                <input id="structHeight" type="number" class="form-control" min="50" max="500" step="10" value="100">
-                <span class="input-group-text">px</span>
-              </div>
-            </div>
-            <div class="col-12 col-md-4">
-              <label for="structHeight" class="form-label fw-bold">Number of top hits per library</label>
+            <div class="col-12 col-md-6">
+              <label for="structHeight" class="form-label fw-bold">Maximum number of top hits per library</label>
               <div class="input-group">
                 <input id="nTopHits" type="number" class="form-control" min="1" max="20" step="1" value="5">
               </div>
             </div>
 
-            <!-- Color configuration -->
             <div class="col-12">
               <label class="form-label d-block fw-bold">Colors</label>
               <div class="row g-2">
@@ -383,7 +358,6 @@
   <script type="text/javascript" src="visualizer.js"></script>
   <script type="text/javascript">
     document.addEventListener('DOMContentLoaded', () => {
-      // Visualizer.init('data.tsv.gz');
       Visualizer.init();
     })
   </script>

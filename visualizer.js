@@ -46,10 +46,7 @@
   const q = id => R.root.getElementById(id);
   const readConfigForm = () => {
     return {
-      font: q('fontFamily')?.value || "system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif",
       fontSize: Number(q('fontSize')?.value || 12),
-      fontCC: q('fontFamilyCC')?.value || "system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif",
-      fontSizeCC: Number(q('fontSizeCC')?.value || 10),
 
       render: {
         SMILES: !!q('renderSmiles')?.checked,
@@ -59,11 +56,12 @@
       },
 
       structure: {
-        width:  Number(q('structWidth')?.value || 200),
+        width:  Number(q('structWidth')?.value || 100),
         height: Number(q('structHeight')?.value || 100),
       },
 
       nTopHits: Number(q('nTopHits')?.value || 5),
+      zscoreCutoff: Number(q('zscoreCutoff')?.value || 1.0),
 
       colors: {
         mono: q('colorMono')?.value || '#0d6efd',
@@ -80,10 +78,8 @@
     const setChk = (id, v) => { const el = q(id); if (el != null && typeof v === 'boolean') el.checked = v; };
 
     // Typography (global + card if you have both)
-    setVal('fontFamily',   cfg.font);
     setNum('fontSize',     cfg.fontSize);
-    setVal('fontFamilyCC', cfg.fontCC);
-    setNum('fontSizeCC', cfg.fontSizeCC);
+    setNum('zscoreCutoff',     cfg.zscoreCutoff);
 
     // Rendering toggles
     if (cfg.render) {
@@ -113,8 +109,6 @@
   const GlobalConfig = (cfg) => {
     cfg = cfg || readConfigForm();
     R.config = cfg;
-
-    document.body.style.fontFamily = cfg.font;
     document.body.style.fontSize   = `${cfg.fontSize}px`;
   }
 
@@ -553,7 +547,7 @@
 
       const key = row.key;
       let card = document.createElement('div');
-      const width = R.config.structure.width + 10;
+      const width = R.config.structure.width <= 190 ? 200 : R.config.structure.width + 10;
       card.setAttribute('id', key)
       card.className = 'card compound-card';
       card.style.position = 'fixed';
@@ -611,7 +605,7 @@
       card.style.top  = String(Math.round(top)) + 'px';
       document.body.appendChild(card);
 
-      SmilesRenderer.drawSMILES(card);
+      SmilesRenderer.drawSMILES(card, {width: R.config.structure.width, height: R.config.structure.height});
       card = attachConnector(card)
       Draggable(card, header);
 
@@ -1353,9 +1347,6 @@
         initializePage(rows);
       } else {
         R.els.uploadPanel.classList.remove('d-none')
-        // Dropzone.options.dropzone = {
-        //     acceptedFiles: ".csv, .tsv, .json, .csv.gz, .tsv.gz, .json.gz, text/csv, text/tab-separated-values, application/json",
-        // };
       }
     },
   };
