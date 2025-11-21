@@ -8,11 +8,7 @@
    * (c) 2025 FEI YUAN
    */
 
-  let R = {
-    root: document,
-    els: null,
-    io: null,
-    config: null,
+  const DATA = {
     rows: [],
     columns: [],
     libraries: [],
@@ -29,7 +25,14 @@
     vs: null,
     library: null,
     hitsTable: null,
-    topHitsTable: null,
+    topHitsTable: null
+  }
+  let R = {
+    root: document,
+    els: null,
+    io: null,
+    utilities: null,
+    ...DATA
   };
 
   const q = id => R.root.getElementById(id);
@@ -111,6 +114,7 @@
     btnHitsModal         : q('btnHitsModal'),
     btnTopHitsModal      : q('btnTopHitsModal'),
     btnSaveSession       : q('btnSaveSession'),
+    btnUploadSession     : q('btnUploadSession'),
     switchers            : q('switchers'),
     selectors            : q('selectors'),
     btnX                 : q('btnX'),
@@ -126,6 +130,7 @@
     configModal          : q('configModal'),
     btnSaveConfig        : q('btnSaveConfig'),
     encodingModal        : q('encodingModal'),
+    uploadWarningModal   : q('uploadWarningModal'),
     encodingTable        : q('encodingTable'),
     encodingSMILES       : q('encodingSMILES'),
     topHitsModal         : q('topHitsModal'),
@@ -134,7 +139,6 @@
     numHits              : q('numHits'),
     numTopHits           : q('numTopHits'),
     topHitsTable         : q('topHitsTable'),
-    sessionInput         : q('sessionInput')
   }
 
   R.io = (() => {
@@ -160,8 +164,58 @@
         error: reject
       });
     });
+    const saveSession = () => {
+      const getCircularReplacer = () => {
+        const seen = new WeakSet();
+        return (key, value) => {
+          if (typeof value === "object" && value !== null) {
+            if (seen.has(value)) {
+              return;
+            }
+            seen.add(value);
+          }
+          return value;
+        };
+      };
+      const serializableTops = Object.fromEntries(
+        Array.from(R.tops.entries()).map(([vsKey, rowSet]) => [vsKey, Array.from(rowSet)])
+      );
+      const serializableHits = Object.fromEntries(
+          Array.from(R.hits.entries()).map(([vsKey, rowSet]) => [vsKey, Array.from(rowSet)])
+      );
 
-    const loadSession = async (file) => {
+      const data = {
+        config: R.config,
+        rows: R.rows,
+        columns: R.columns,
+        libraries: R.libraries,
+        countColumns: R.countColumns,
+        scoreColumns: R.scoreColumns,
+        smilesColumns: R.smilesColumns,
+        hits: serializableHits,
+        tops: serializableTops,
+        uniques: R.uniques,
+        duplicates: R.duplicates,
+        x: R.x,
+        y: R.y,
+        vs: R.vs,
+        library: R.library,
+        cards: R.cards
+      }
+      const jsonString = JSON.stringify(data, getCircularReplacer(), 2);
+      const compressedData = pako.gzip(jsonString, { to: 'string' });
+      const blob = new Blob([compressedData], { type: 'application/gzip' });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = `VEP.session.${R.utilities.getCompactTimestamp()}.json.gz`;
+      link.style.display = 'none';
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      URL.revokeObjectURL(url);
+    }
+    const loadSession = async (file, { onComplete } = {}) => {
       if (!file) throw new Error("No session file provided.");
 
       const u8 = new Uint8Array(await file.arrayBuffer());
@@ -174,14 +228,19 @@
       }
 
       try {
-        const sessionData = JSON.parse(jsonString);
-        return sessionData;
+        const data = JSON.parse(jsonString);
+        // if (onComplete) {
+        //   Object.assign(R, data);
+        //   R.uniques = R.uniques.filter(Boolean);
+        //   R.hits = new Map(Object.entries(R.hits).map(([vsKey, rowArray]) => [vsKey, new Set(rowArray)]));
+        //   R.tops = new Map(Object.entries(R.tops).map(([vsKey, rowArray]) => [vsKey, new Set(rowArray)]));
+        //   onComplete?.(R.rows);
+        // }
+        return data;
       } catch (e) {
-        throw new Error("Failed to parse session file. File may be corrupt or not valid JSON.");
+        throw new Error(`Failed to parse session file: ${e}.`);
       }
     };
-
-
     const load = async (input, { onComplete } = {}) => {
       try {
         let rows;
@@ -213,7 +272,7 @@
         throw err;
       }
     };
-    return { load, loadSession };
+    return { load, saveSession, loadSession };
   })();
 
   R.utilities = (() => {
@@ -670,52 +729,27 @@
       const ss = pad(now.getSeconds());
       return `${mm}${dd}${yyyy}${hh}${min}${ss}`;
     };
+    const showUploadPanel = () => {
+      R.els.switchers.classList.add('d-none');
+      R.els.selectors.classList.add('d-none');
+      R.els.chartPanel.classList.add('d-none');
+      R.els.uploadPanel.classList.remove('d-none');
+      const modal = bootstrap.Modal.getInstance(R.els.uploadWarningModal)
+      modal.hide();
+      R = {
+        root: document,
+        els: R.els,
+        io: R.io,
+        ...DATA
+      };
+    }
 
     return { findColumns, assembleCompoundCard, assembleCompoundName, getSMILES, assemblePlainText,
              assembleKV, assembleCountScore, assembleHoverText, alignModebarWithLegend,
-             buildColumns, keyForRow, tabulize, updateHitsCount,
+             buildColumns, keyForRow, tabulize, updateHitsCount, showUploadPanel,
              removeCompounds, removeCompound, showCompound, showCompounds, getCompactTimestamp,
            };
   })();
-
-  const loadSessionData = (sessionData) => {
-    if (!sessionData || !Array.isArray(sessionData.rows) || !sessionData.vs) {
-      console.error("Invalid session file format.");
-      return;
-    }
-
-    const stateKeys = [
-      'config', 'rows', 'columns', 'libraries', 'countColumns', 'scoreColumns',
-      'smilesColumns', 'hits', 'tops', 'uniques', 'duplicates',
-      'x', 'y', 'vs', 'library', 'cards'
-    ];
-
-    stateKeys.forEach(key => {
-      if (sessionData[key] !== undefined) {
-        R[key] = sessionData[key];
-      }
-    });
-
-    if (R.tops && !(R.tops instanceof Map)) {
-        const newTopsMap = new Map();
-        for (const [vsKey, dataArray] of Object.entries(R.tops)) {
-            newTopsMap.set(vsKey, new Set(dataArray));
-        }
-        R.tops = newTopsMap;
-    }
-
-    if (R.hits && !(R.hits instanceof Map)) {
-        const newHitsMap = new Map();
-        for (const [vsKey, dataArray] of Object.entries(R.hits)) {
-            newHitsMap.set(vsKey, new Set(dataArray));
-        }
-        R.hits = newHitsMap;
-    }
-
-    populateConfigForm(R.config);
-    GlobalConfig(R.config);
-    initializePage(R.rows);
-  };
 
   const buildSelector = () => {
     const buildOptions = (selector, options, tag, selected, btn) => {
@@ -780,6 +814,8 @@
     const library = R.library || R.els.btnLibrary?.textContent.split(': ')[1];
     const cfg = R.config;
 
+    console.log(`x and y: ${x}, ${y}`)
+
     const colorForAxis = (ax) => {
       if ([0, 1, 2].includes(ax)) return cfg.colors.mono;
       if ([3, 4, 5].includes(ax)) return cfg.colors.di;
@@ -817,7 +853,6 @@
       const columns = Math.ceil(Math.sqrt(n));
       const rows = Math.ceil(n / columns);
       const lastRowCount = n - (rows - 1) * columns;
-
       const xsAll = R.uniques.map(r => r[x]);
       const ysAll = R.uniques.map(r => r[y]);
 
@@ -1090,23 +1125,38 @@
 
   const bindEvents = () => {
     R.els.dz = Dropzone.forElement("#dropzone");
-    R.els.dz.on('addedfile', (file) => { if (file && !file.name.endsWith('.json.gz')) R.io.load(file, { onComplete: initializePage }).catch(R.onError || console.error); });
+    R.els.dz.on('addedfile', async (file) => {
+      if (!file) return;
 
-    if (R.els.sessionInput) {
-      R.els.sessionInput.addEventListener('change', async (e) => {
-        const file = e.target.files[0];
-        if (file) {
-          try {
-            const sessionData = await R.io.loadSession(file);
-            loadSessionData(sessionData);
-            R.els.uploadPanel.classList.add('d-none');
-            console.log("Session loaded successfully.");
-          } catch (error) {
-            console.error("Error loading session:", error);
+      const dz = R.els.dz;
+      dz.removeAllFiles(true);
+
+      let loaderPromise;
+      if (file.name.endsWith('.json') || file.name.endsWith('.json.gz')) {
+        loaderPromise = R.io.loadSession(file);
+      } else {
+        loaderPromise = R.io.load(file, { onComplete: initializePage });
+      }
+
+      loaderPromise
+        .then(data => {
+          if (data) {
+            if (file.name.endsWith('.json') || file.name.endsWith('.json.gz')) {
+              Object.assign(R, data);
+              R.uniques = R.uniques.filter(Boolean);
+              R.hits = new Map(Object.entries(R.hits).map(([vsKey, rowArray]) => [vsKey, new Set(rowArray)]));
+              R.tops = new Map(Object.entries(R.tops).map(([vsKey, rowArray]) => [vsKey, new Set(rowArray)]));
+              initializePage(R.rows);
+            }
+            dz.removeAllFiles(true);
           }
-        }
-      });
-    }
+        })
+        .catch(error => {
+          console.error("Error processing file:", error);
+          R.els.dz.removeAllFiles(true);
+          R.onError?.(error) || console.error(error);
+        });
+    });
 
     const bindDropdown = (menu, btn, label) => {
       menu.addEventListener('click', (e) => {
@@ -1261,66 +1311,38 @@
           R.hitsTable.download('csv', `${R.vs}.candidate.hits.csv`)
           break;
         case 'saveSession':
-          const getCircularReplacer = () => {
-            const seen = new WeakSet();
-            return (key, value) => {
-              if (typeof value === "object" && value !== null) {
-                if (seen.has(value)) {
-                  return;
-                }
-                seen.add(value);
-              }
-              return value;
-            };
-          };
-
-          const serializableTops = Object.fromEntries(
-              Array.from(R.tops.entries()).map(([vsKey, rowSet]) => [vsKey, Array.from(rowSet)])
-          );
-          const serializableHits = Object.fromEntries(
-              Array.from(R.hits.entries()).map(([vsKey, rowSet]) => [vsKey, Array.from(rowSet)])
-          );
-
-
-          const data = {
-            config: R.config,
-            rows:R.rows,
-            columns: R.columns,
-            libraries: R.libraries,
-            countColumns: R.countColumns,
-            scoreColumns: R.scoreColumns,
-            smilesColumns: R.smilesColumns,
-            hits: serializableHits,
-            tops: serializableTops,
-            uniques: R.uniques,
-            duplicates: R.duplicates,
-            x: R.x,
-            y: R.y,
-            vs: R.vs,
-            library: R.library,
-            cards: R.cards
-          }
-          const jsonString = JSON.stringify(data, getCircularReplacer(), 2);
-          const compressedData = pako.gzip(jsonString, { to: 'string' });
-          const blob = new Blob([compressedData], { type: 'application/gzip' });
-          const url = URL.createObjectURL(blob);
-          const link = document.createElement('a');
-          link.href = url;
-          link.download = `VEP.session.${R.utilities.getCompactTimestamp()}.json.gz`;
-          link.style.display = 'none';
-          document.body.appendChild(link);
-          link.click();
-          document.body.removeChild(link);
-          URL.revokeObjectURL(url);
+          R.io.saveSession();
+          break;
+        case 'uploadSession':
+          const modal = bootstrap.Modal.getOrCreateInstance(R.els.uploadWarningModal, {
+            backdrop: true,
+            keyboard: true,
+            focus: true
+          });
+          modal.show();
+          break;
+        case 'uploadAnyway':
+          R.utilities.removeCompounds();
+          R.utilities.showUploadPanel();
+          break;
+        case 'saveAndUpload':
+          R.io.saveSession();
+          R.utilities.showUploadPanel();
           break;
       }
-
     });
   };
 
   const initializePage = (rows) => {
     R.els.uploadPanel.classList.add('d-none');
+    R.els.switchers.classList.remove('d-none');
+    R.els.selectors.classList.remove('d-none');
+    R.els.chartPanel.classList.remove('d-none');
+
     R.columns = Object.keys(rows[0]);
+    if (!R.utilities) {
+        throw new Error("R.utilities not yet initialized. Cannot process columns.");
+    }
     R.countColumns = R.utilities.findColumns(R.columns, 'count_')
     R.scoreColumns = R.utilities.findColumns(R.columns, 'zscore_')
     R.smilesColumns = R.utilities.findColumns(R.columns, '', 'smiles')
@@ -1346,8 +1368,10 @@
         R.io.load(input, { onComplete: initializePage }).catch(console.error);
       } else {
         R.els.uploadPanel.classList.remove('d-none')
+        // Dropzone.options.dropzone = {
+        //     acceptedFiles: ".csv, .tsv, .json, .csv.gz, .tsv.gz, .json.gz, text/csv, text/tab-separated-values, application/json",
+        // };
       }
     },
-    loadSession: loadSessionData
   };
 })(window);
