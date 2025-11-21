@@ -8,6 +8,14 @@
    * (c) 2025 FEI YUAN
    */
 
+  Dropzone.options.dropzone = {
+    acceptedFiles: ".csv, .tsv, .json, .gz, text/csv, text/tab-separated-values, application/json, application/gzip",
+    url: "#",
+    autoProcessQueue: false,
+    maxFiles: 1,
+    uploadMultiple: false,
+  };
+
   const DATA = {
     rows: [],
     columns: [],
@@ -215,64 +223,54 @@
       document.body.removeChild(link);
       URL.revokeObjectURL(url);
     }
-    const loadSession = async (file, { onComplete } = {}) => {
-      if (!file) throw new Error("No session file provided.");
+    const load = async (input) => {
+        if (!input) throw new Error("No file or URL provided.");
 
-      const u8 = new Uint8Array(await file.arrayBuffer());
-      let jsonString;
+        let rawInput = input;
+        let fileName = (typeof input === 'object' && input.name) ? input.name : (typeof input === 'string' ? input : null);
 
-      if (isGzip(u8)) {
-        jsonString = window.pako.ungzip(u8, { to: "string" });
-      } else {
-        jsonString = await file.text();
-      }
-
-      try {
-        const data = JSON.parse(jsonString);
-        // if (onComplete) {
-        //   Object.assign(R, data);
-        //   R.uniques = R.uniques.filter(Boolean);
-        //   R.hits = new Map(Object.entries(R.hits).map(([vsKey, rowArray]) => [vsKey, new Set(rowArray)]));
-        //   R.tops = new Map(Object.entries(R.tops).map(([vsKey, rowArray]) => [vsKey, new Set(rowArray)]));
-        //   onComplete?.(R.rows);
-        // }
-        return data;
-      } catch (e) {
-        throw new Error(`Failed to parse session file: ${e}.`);
-      }
-    };
-    const load = async (input, { onComplete } = {}) => {
-      try {
-        let rows;
-        let download = false;
         if (typeof input === "string") {
-          if (/\.gz$/i.test(input)) {
-            const res = await fetch(input, { mode: "cors" });
+            let res = await fetch(input, { mode: "cors" });
             if (!res.ok) throw new Error(`Fetch failed: ${res.status} ${res.statusText}`);
 
             const u8 = new Uint8Array(await res.arrayBuffer());
-            if (!isGzip(u8)) throw new Error("URL ends with .gz but payload is not gzip.");
-            input = window.pako.ungzip(u8, { to: "string" });
-          } else {
-            download = true;
-          }
-          rows = await papaParse(input, download)
-        }
-        else if (input instanceof Blob) {
-          const u8 = new Uint8Array(await input.arrayBuffer());
-          if (isGzip(u8)) {
-            input = window.pako.ungzip(u8, { to: "string" });
-          }
-          rows = await papaParse(input, false);
+            if (isGzip(u8)) {
+                if (!window.pako) throw new Error("pako library required for gzip decompression.");
+                rawInput = window.pako.ungzip(u8, { to: "string" });
+            } else {
+                rawInput = u8;
+            }
+            fileName = fileName || input;
+        } else if (input instanceof Blob) {
+            const u8 = new Uint8Array(await input.arrayBuffer());
+            if (isGzip(u8)) {
+                if (!window.pako) throw new Error("pako library required for gzip decompression.");
+                rawInput = window.pako.ungzip(u8, { to: "string" });
+            } else {
+                rawInput = input; // Pass the original Blob for text/CSV parsing
+            }
         } else {
-          throw new Error("load expects a URL string or a File/Blob.");
+            throw new Error("loadAndProcessFile expects a URL string or a File/Blob.");
         }
-        onComplete?.(rows);
-      } catch (err) {
-        throw err;
-      }
+
+        if (fileName && (fileName.endsWith('.json') || fileName.endsWith('.json.gz'))) {
+            let jsonString;
+            if (typeof rawInput !== 'string') {
+                jsonString = await new Response(rawInput).text();
+            } else {
+                jsonString = rawInput;
+            }
+
+            try {
+                return JSON.parse(jsonString);
+            } catch (e) {
+                throw new Error(`Failed to parse session file: ${e.message}`);
+            }
+        } else {
+          return await papaParse(rawInput, false);
+        }
     };
-    return { load, saveSession, loadSession };
+    return { load, saveSession };
   })();
 
   R.utilities = (() => {
@@ -736,12 +734,7 @@
       R.els.uploadPanel.classList.remove('d-none');
       const modal = bootstrap.Modal.getInstance(R.els.uploadWarningModal)
       modal.hide();
-      R = {
-        root: document,
-        els: R.els,
-        io: R.io,
-        ...DATA
-      };
+      Object.assign(R, DATA);
     }
 
     return { findColumns, assembleCompoundCard, assembleCompoundName, getSMILES, assemblePlainText,
@@ -1129,33 +1122,24 @@
       if (!file) return;
 
       const dz = R.els.dz;
-      dz.removeAllFiles(true);
+      try {
+        const data = await R.io.load(file)
+        dz.removeAllFiles(true);
 
-      let loaderPromise;
-      if (file.name.endsWith('.json') || file.name.endsWith('.json.gz')) {
-        loaderPromise = R.io.loadSession(file);
-      } else {
-        loaderPromise = R.io.load(file, { onComplete: initializePage });
+        if (file.name.endsWith('.json') || file.name.endsWith('.json.gz')) {
+          Object.assign(R, data);
+          R.uniques = R.uniques.filter(Boolean);
+          R.hits = new Map(Object.entries(R.hits).map(([vsKey, rowArray]) => [vsKey, new Set(rowArray)]));
+          R.tops = new Map(Object.entries(R.tops).map(([vsKey, rowArray]) => [vsKey, new Set(rowArray)]));
+          initializePage(R.rows);
+        } else {
+            initializePage(data);
+        }
+      } catch (error) {
+        console.error("Error processing file:", error);
+        R.els.dz.removeAllFiles(true);
+        R.onError?.(error) || console.error(error);
       }
-
-      loaderPromise
-        .then(data => {
-          if (data) {
-            if (file.name.endsWith('.json') || file.name.endsWith('.json.gz')) {
-              Object.assign(R, data);
-              R.uniques = R.uniques.filter(Boolean);
-              R.hits = new Map(Object.entries(R.hits).map(([vsKey, rowArray]) => [vsKey, new Set(rowArray)]));
-              R.tops = new Map(Object.entries(R.tops).map(([vsKey, rowArray]) => [vsKey, new Set(rowArray)]));
-              initializePage(R.rows);
-            }
-            dz.removeAllFiles(true);
-          }
-        })
-        .catch(error => {
-          console.error("Error processing file:", error);
-          R.els.dz.removeAllFiles(true);
-          R.onError?.(error) || console.error(error);
-        });
     });
 
     const bindDropdown = (menu, btn, label) => {
@@ -1365,7 +1349,8 @@
       bindEvents();
 
       if (input) {
-        R.io.load(input, { onComplete: initializePage }).catch(console.error);
+        const rows = await R.io.load(input);
+        initializePage(rows);
       } else {
         R.els.uploadPanel.classList.remove('d-none')
         // Dropzone.options.dropzone = {
