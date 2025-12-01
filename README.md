@@ -11,7 +11,7 @@
 ## Overview
 The **Enrichment Profile Visualizer (EPV)** is a single‑page web app for interactive inspection 
 of enrichment data (e.g., DEL or HTS outputs). It supports:
-- Drag‑and‑drop loading of CSV/TSV (optionally gzipped).
+- Drag‑and‑drop loading of CSV/TSV/JSON (optionally gzipped) file.
 - Interactive Plotly scatter plot.
 - Tabulated hit summaries via Tabulator.
 - SMILES and building‑block rendering via RDKit.js.
@@ -20,43 +20,20 @@ All functionality runs client‑side in the browser, no backend required.
 
 ---
 
-## File Structure
-Place these files in the same directory:
-```
-index.html
-visualizer.js
-smiles-render.js
-style.css
-README.md
-LICENSE
-```
-Optional: a default dataset, e.g. `data.tsv.gz`.
-
----
-
-## Quick Start
-**Option A — Local file:** open `index.html` in a modern browser (Chrome/Edge/Firefox/Safari).  
-It will initialize with a default dataset (data.tsv.gz) if exists and configured in `index.html`:
-```html
-<script>
-  document.addEventListener('DOMContentLoaded', () => {
-    Visualizer.init({ url: 'data.tsv.gz' })
-  })
-</script>
-```
-**Option B — Your own data:** if no default dataset is found, a file upload panel will show up,
- use the upload panel to drag‑and‑drop a CSV/TSV (gz ok).
-
-> Tip: If your browser blocks local file access for modules, serve the folder locally:
-```bash
-python -m http.server 8000
-# then open http://localhost:8000
-```
+## Typical Workflow
+1. Open `index.html` (or serve locally).
+2. Load dataset (via drag-and-drop or **Upload** button).
+3. Choose X/Library/Y fields using the selectors.
+4. Zoom, hover, and click points for detail.
+5. Review **Candidate Hits** and **Top Hits**.
+6. Tune font sizes, structure rendering, z-score cutoff, and maximum number of hits per library in **Config**.
+7. Open **Encoding** to inspect details of building blocks encoded by multiple barcodes.
 
 ---
 
 ## Data Format
 Your table must include a header row and at least two numeric columns for plotting. Common/expected fields:
+
 | Column | Description | Example |
 |---|---|---|
 | `library` | Library/category id | `qDOS1` |
@@ -72,9 +49,10 @@ CSV/TSV or GZIP‑compressed versions are supported.
 ## UI Guide
 ### Toolbar (top)
 - **Help ( ? )** — Open help modal
-- **Candidate Hits (bag)** — Open hits table
-- **Equal Axes (1:1)** — Force x:y axis scaling
-- **Top Hits (table)** — Open top hits per library
+- **Candidate Hits (bag)** — Open the table of candidate hits
+- **Top Hits (table)** — Open the table of top hits
+- **Upload (cloud)** — Open the unsaved session warning/upload modal to load new data
+- **Save (download)** — Save the current visualizer state as a JSON file
 - **Config (gear)** — Open configuration modal
 
 ### Selectors (after data loads)
@@ -91,27 +69,19 @@ Interactive Plotly scatter with zoom/pan/reset. Click points to inspect structur
 - **Top Hits** — AI‑flagged or top‑N per library
 - **Config** — Visualization and rendering settings
 - **Encoding** — Composition view (SMILES, BB1–BB3)
+- **Upload** — Prompts to save the current session before loading new data
 
 ---
 
 ## Configuration (⚙️)
-- **Fonts**: family + size for charts and compound cards
-- **Structure rendering toggles**: SMILES, BB1, BB2, BB3
+- **Font size**: for chart labels, axes, and compound card text
 - **Structure size**: width × height (px)
+- **Structure rendering toggles**: SMILES, BB1, BB2, BB3
 - **Top hits per library**: integer (1–20)
+- **z score cutoff**: threshold for determining 'hits'
+- **Maximum number** of top hits per library: integer (1–20)
 - **Colors**: mono/di/tri‑sython pickers
 Click **Apply** to save/apply changes.
-
----
-
-## Typical Workflow
-1. Open `index.html` (or serve locally).
-2. Load dataset (auto or via upload).
-3. Choose X/Library/Y fields.
-4. Zoom, hover, and click points for detail.
-5. Review **Candidate Hits** and **Top Hits**.
-6. Tune fonts, sizes, and structure rendering in **Config**.
-7. Open **Encoding** to inspect building blocks.
 
 ---
 

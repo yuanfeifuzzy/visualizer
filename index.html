@@ -9,29 +9,15 @@
 
   <title>Enrichment Profile Visualizer</title>
 
-  <!-- Google Font -->
-  <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
-
-  <!-- Bootstrap 5 CSS -->
-  <link
-    href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css"
-    rel="stylesheet"
-    integrity="sha384-QWTKZyjpPEjISv5WaRU9OFeRpok6YctnYmDr5pNlyT2bRjXh0JMhjY6hW+ALEwIH"
-    crossorigin="anonymous">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css">
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.13.1/font/bootstrap-icons.min.css">
-
-  <!-- Dropzone CSS -->
   <link rel="stylesheet" href="https://unpkg.com/dropzone@5/dist/min/dropzone.min.css" />
-  <link href="https://unpkg.com/tabulator-tables@6.3.1/dist/css/tabulator.min.css" rel="stylesheet">
+  <link rel="stylesheet" href="https://unpkg.com/tabulator-tables@6.3.1/dist/css/tabulator.min.css">
   <link href="style.css" rel="stylesheet">
 </head>
 
 <body class="container-fluid bg-light">
-  <!-- Title and toolbar -->
   <div class="row py-2 align-items-center g-2 flex-shrink-0">
-    <!--Title & help-->
     <div
       class="col-sm-2 col-md-1 d-flex align-items-center justify-content-start">
       <h1 class="h3 mb-0">EPV</h1>
@@ -41,7 +27,6 @@
       </button>
     </div>
 
-    <!--Switchers-->
     <div class="col-9 col-sm-10 col-md-4 col-lg-5 d-flex justify-content-end d-none" id="switchers">
       <button type="button" class="btn btn-light position-relative py-0 px-1 disabled" id="btnHitsModal"
               data-bs-toggle="modal" data-bs-target="#hitsModal" title="Candidate Hits">
@@ -50,6 +35,7 @@
           <span class="badge rounded-pill bg-danger text-small" id="numHits"></span>
         </span>
       </button>
+
       <button type="button" class="btn btn-light position-relative py-0 px-1 ms-4" id="btnTopHitsModal"
               data-bs-toggle="modal" data-bs-target="#topHitsModal" title="Candidate Hits">
         <i class="bi bi-table"></i>
@@ -58,21 +44,22 @@
         </span>
       </button>
 
-      <button type="button" class="btn btn-light py-0 ms-4" title="Upload a file to visualize" id="btnUploadSession"
-              data-action="uploadSession">
+      <button type="button" class="btn btn-light py-0 ms-4" title="Upload a file to visualize"
+              data-bs-toggle="modal" data-bs-target="#uploadModal">
         <i class="bi bi-upload"></i>
       </button>
+
       <button type="button" class="btn btn-light py-0 ms-2" title="Save current session" id="btnSaveSession"
               data-action="saveSession">
         <i class="bi bi-download"></i>
       </button>
+
       <button type="button" class="btn btn-light py-0 ms-1 me-2" title="Config"
               data-bs-toggle="modal" data-bs-target="#configModal">
         <i class="bi bi-gear"></i>
       </button>
     </div>
 
-    <!--Selectors-->
     <div class="col-12 col-sm-12 col-md-7 col-lg-6 d-flex justify-content-end d-none" id="selectors">
       <div id="data-selector" class="btn-group d-flex w-100" role="group" aria-label="X / Library / Y">
         <div class="btn-group flex-fill" role="group">
@@ -97,10 +84,8 @@
         </div>
       </div>
     </div>
-
   </div>
 
-  <!--File upload panel-->
   <div class="container bg-white align-items-center align-content-center" id="uploadPanel">
     <div class="upload-card py-3 rounded">
       <h2 class="h5 text-center mb-2">Load enrichment profile or session data</h2>
@@ -120,12 +105,10 @@
     </div>
   </div>
 
-  <!--Chart panel-->
   <div id="chartContainer">
     <div id="chartPanel" class="w-100 h-100 d-none"></div>
   </div>
 
-  <!-- Help Modal -->
   <div class="modal fade" id="helpModal" tabindex="-1" aria-labelledby="helpModalLabel" aria-hidden="true">
     <div class="modal-dialog modal-lg modal-dialog-centered">
       <div class="modal-content">
@@ -142,7 +125,6 @@
     </div>
   </div>
 
-  <!-- Hit Modal -->
   <div class="modal fade" id="hitsModal" tabindex="-1" aria-labelledby="hitModalLabel" aria-hidden="true">
     <div class="modal-dialog modal-xl modal-dialog-centered modal-dialog-scrollable">
       <div class="modal-content">
@@ -162,7 +144,6 @@
     </div>
   </div>
 
-  <!-- Top Hits Modal -->
   <div class="modal fade" id="topHitsModal" tabindex="-1" aria-labelledby="topHitsModalLabel" aria-hidden="true">
     <div class="modal-dialog modal-xl modal-dialog-centered modal-dialog-scrollable">
       <div class="modal-content">
@@ -182,7 +163,6 @@
     </div>
   </div>
 
-  <!-- Config Modal -->
   <div class="modal fade" id="configModal" tabindex="-1" aria-labelledby="configModalLabel" aria-hidden="true">
     <div class="modal-dialog modal-lg modal-dialog-centered">
       <div class="modal-content">
@@ -249,12 +229,12 @@
             <div class="col-12 col-md-6">
               <label for="zscoreCutoff" class="form-label fw-bold"><i>z</i> score cutoff</label>
               <div class="input-group">
-                <input id="zscoreCutoff" type="number" class="form-control" value="1.0">
+                <input id="zscoreCutoff" type="number" class="form-control" value="1.0", step="0.1">
                 <span class="input-group-text">px</span>
               </div>
             </div>
             <div class="col-12 col-md-6">
-              <label for="structHeight" class="form-label fw-bold">Maximum number of top hits per library</label>
+              <label for="nTopHits" class="form-label fw-bold">Maximum number of top hits per library</label>
               <div class="input-group">
                 <input id="nTopHits" type="number" class="form-control" min="1" max="20" step="1" value="5">
               </div>
@@ -291,14 +271,13 @@
           </form>
         </div>
         <div class="modal-footer">
-          <button id="btnSaveConfig" class="btn btn-primary">Apply</button>
+          <button id="btnSaveConfig" class="btn btn-primary" data-action="applyConfig">Apply</button>
           <button class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
         </div>
       </div>
     </div>
   </div>
 
-  <!-- Encoding Modal -->
   <div class="modal fade" id="encodingModal" tabindex="-1" aria-labelledby="encodingModalLabel" aria-hidden="true">
     <div class="modal-dialog modal-xl modal-dialog-centered">
       <div class="modal-content">
@@ -314,12 +293,11 @@
     </div>
   </div>
 
-  <!-- Upload Warning Modal -->
-  <div class="modal fade" id="uploadWarningModal" tabindex="-1" aria-labelledby="uploadWarningModalLabel" aria-hidden="true">
+  <div class="modal fade" id="uploadModal" tabindex="-1" aria-labelledby="uploadModalLabel" aria-hidden="true">
     <div class="modal-dialog modal-dialog-centered">
       <div class="modal-content">
         <div class="modal-header">
-          <h5 class="modal-title" id="uploadWarningModalLabel">Unsaved Session Warning</h5>
+          <h5 class="modal-title">Unsaved Session Warning</h5>
           <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
         </div>
         <div class="modal-body">
@@ -340,12 +318,7 @@
     </div>
   </div>
 
-  <!-- Bootstrap 5 JS bundle -->
-  <script
-    src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"
-    integrity="sha384-YvpcrYf0tY3lHB60NNkmXc5s9fDVZLESaAA55NDzOxhy9GkcIdslK1eN7N6jIeHz"
-    crossorigin="anonymous"
-    defer></script>
+  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js" defer></script>
   <script src="https://unpkg.com/dropzone@5/dist/min/dropzone.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/pako@2/dist/pako.min.js"></script>
   <script src="https://unpkg.com/papaparse@5.4.1/papaparse.min.js"></script>

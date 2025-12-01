@@ -39,6 +39,7 @@
     root: document,
     els: null,
     io: null,
+    config: null,
     utilities: null,
     ...DATA
   };
@@ -70,53 +71,11 @@
       },
     };
   }
-  const populateConfigForm = (cfg) => {
-    if (!cfg) return;
-
-    const setVal = (id, v) => { const el = q(id); if (el != null && v != null && v !== '') el.value = v; };
-    const setNum = (id, v) => { const el = q(id); if (el != null && Number.isFinite(v)) el.value = String(v); };
-    const setChk = (id, v) => { const el = q(id); if (el != null && typeof v === 'boolean') el.checked = v; };
-
-    // Typography (global + card if you have both)
-    setNum('fontSize',     cfg.fontSize);
-    setNum('zscoreCutoff',     cfg.zscoreCutoff);
-
-    // Rendering toggles
-    if (cfg.render) {
-      setChk('renderBB1',  !!cfg.render.c1_smiles);
-      setChk('renderBB2',  !!cfg.render.c2_smiles);
-      setChk('renderBB3',  !!cfg.render.c3_smiles);
-      setChk('renderSmiles', !!cfg.render.SMILES);
-    }
-
-    // Structure size
-    if (cfg.structure) {
-      setNum('structWidth',  cfg.structure.width);
-      setNum('structHeight', cfg.structure.height);
-    }
-
-    if (cfg.nTopHits) {
-      setNum('nTopHits', cfg.nTopHits);
-    }
-
-    // Colors
-    if (cfg.colors) {
-      setVal('colorMono', cfg.colors.mono);
-      setVal('colorDi',   cfg.colors.di);
-      setVal('colorTri',  cfg.colors.tri);
-    }
-  }
-  const GlobalConfig = (cfg) => {
-    cfg = cfg || readConfigForm();
-    R.config = cfg;
-    document.body.style.fontSize   = `${cfg.fontSize}px`;
-  }
 
   R.els = {
     btnHitsModal         : q('btnHitsModal'),
     btnTopHitsModal      : q('btnTopHitsModal'),
     btnSaveSession       : q('btnSaveSession'),
-    btnUploadSession     : q('btnUploadSession'),
     switchers            : q('switchers'),
     selectors            : q('selectors'),
     btnX                 : q('btnX'),
@@ -130,9 +89,8 @@
     dz                   : q('dropzone'),
     chartPanel           : q('chartPanel'),
     configModal          : q('configModal'),
-    btnSaveConfig        : q('btnSaveConfig'),
     encodingModal        : q('encodingModal'),
-    uploadWarningModal   : q('uploadWarningModal'),
+    uploadModal   : q('uploadWarningModal'),
     encodingTable        : q('encodingTable'),
     encodingSMILES       : q('encodingSMILES'),
     topHitsModal         : q('topHitsModal'),
@@ -160,8 +118,20 @@
         skipEmptyLines: true,
         worker: true,
         complete: ({ data }) => {
-          if (data && data.length) resolve(data.map((row, i) => ({ ...row, index: i, key: R.utilities.keyForRow(row) })));
-          else reject(new Error("The text/file is empty or contains no valid data."));
+          if (data && data.length) {
+            resolve(data.map((row, i) => {
+              const fallbackCompound = `V${i}`;
+              const compoundValue = row.compound || fallbackCompound;
+              return {
+                ...row,
+                index: i,
+                compound: compoundValue,
+                key: R.utilities.keyForRow({ ...row, compound: compoundValue })
+              };
+            }));
+          } else {
+            reject(new Error("The text/file is empty or contains no valid data."));
+          }
         },
         error: reject
       });
@@ -455,7 +425,6 @@
       }
     };
     const removeCompounds = () => {
-      console.log('Removing compound cards')
       const cards = document.querySelectorAll('.compound-card');
       if (cards.length > 0) {
         for (const card of cards) {
@@ -612,11 +581,11 @@
       return card
     };
     const assembleCompoundName = (row, addCopyNumber=false, addButton=false) => {
-      let compound = row.compound ? row.compound : `VC${row.index}`;
+      let compound = row.compound;
       if (row.copies > 1 && addCopyNumber) {
         if (addButton) {
           const button = ' <button type="button" class="btn btn-outline-success rounded-pill btn-sm py-0" ' +
-                                `data-action="open-encoding" data-key="${row.key}">${row.copies}</button>`;
+                                `data-action="encoding" data-key="${row.key}">${row.copies}</button>`;
           compound += button
         } else {
           compound += ` [${row.copies}]`
@@ -800,8 +769,6 @@
     const y = R.y || R.els.btnY?.textContent.split(': ')[1];
     const library = R.library || R.els.btnLibrary?.textContent.split(': ')[1];
     const cfg = R.config;
-
-    console.log(`x and y: ${x}, ${y}`)
 
     const colorForAxis = (ax) => {
       if ([0, 1, 2].includes(ax)) return cfg.colors.mono;
@@ -1091,20 +1058,23 @@
         .filter(([, idxs]) => idxs.length >= 2).map(([k, idxs]) => [k, idxs.slice()]));
     }
 
-    if (!R.tops.has(R.vs)) {
-      const topsSet = new Set();
-      const topsByLibrary = {};
+    const topsSet = new Set();
+    const topsByLibrary = {};
 
-      for (const row of R.uniques) (topsByLibrary[row.library] ??= []).push(row);
+    for (const row of R.uniques) (topsByLibrary[row.library] ??= []).push(row);
 
-      for (const v of Object.values(topsByLibrary)) {
-        const top = v.filter(a => (a.axis === 6) && (norm(a?.[R.x]) >= 0.3))
-          .sort((a, b) => norm(b?.[R.x]) - norm(a?.[R.x])).slice(0, R.config.nTopHits);
-        for (const t of top) {
-          topsSet.add(t);
-        }
+    for (const v of Object.values(topsByLibrary)) {
+      const top = v.filter(a => (a.axis === 6) && (norm(a?.[R.x]) >= R.config.zscoreCutoff))
+        .sort((a, b) => norm(b?.[R.x]) - norm(a?.[R.x])).slice(0, R.config.nTopHits);
+      for (const t of top) {
+        topsSet.add(t);
       }
+    }
+
+    if (!R.tops.has(R.vs)) {
       R.tops.set(R.vs, topsSet);
+    } else {
+      R.tops.set(R.vs, new Set([...R.tops.get(R.vs), ...topsSet]));
     }
 
     R.hits.set(R.vs, R.hits.get(R.vs) ?? new Set());
@@ -1157,11 +1127,8 @@
         analyzeData();
         buildHitsTable();
         buildTopHitsTable();
-
         R.utilities.removeCompounds();
-
         renderChart();
-
         if (R.library !== 'All') R.utilities.showCompounds();
       });
     }
@@ -1169,17 +1136,17 @@
     bindDropdown(R.els.librarySel, R.els.btnLibrary, 'Library')
     bindDropdown(R.els.ySel, R.els.btnY, 'Y')
 
-    R.els.btnSaveConfig?.addEventListener('click', () => {
-      const cfg = readConfigForm();
-      bootstrap.Modal.getInstance(R.els.configModal)?.hide();
-      GlobalConfig(cfg);
-      renderChart();
-    });
-
-    R.els.configModal.addEventListener('show.bs.modal', () => {
-      if (R.config) populateConfigForm(R.config);
-      bootstrap.Modal.getInstance(R.els.configModal)?.show();
-    });
+    // R.els.btnSaveConfig?.addEventListener('click', () => {
+    //   const cfg = readConfigForm();
+    //   bootstrap.Modal.getInstance(R.els.configModal)?.hide();
+    //   GlobalConfig(cfg);
+    //   renderChart();
+    // });
+    //
+    // R.els.configModal.addEventListener('show.bs.modal', () => {
+    //   if (R.config) populateConfigForm(R.config);
+    //   bootstrap.Modal.getInstance(R.els.configModal)?.show();
+    // });
 
     handleChartEvent(R.els.chartPanel);
 
@@ -1224,7 +1191,7 @@
       const hitsSet = R.hits.get(R.vs) ?? R.hits.set(R.vs, new Set()).get(R.vs);
 
       switch (action) {
-        case 'open-encoding': {
+        case 'encoding': {
           let smiles = R.utilities.getSMILES(row);
           smiles.push(smiles.shift());
           const cards = smiles.map(s => `<div class="col"><div class="card p-2">
@@ -1307,6 +1274,16 @@
           R.io.saveSession();
           R.utilities.showUploadPanel();
           break;
+        case 'applyConfig':
+          bootstrap.Modal.getInstance(R.els.configModal)?.hide();
+          const cfg = readConfigForm();
+          R.config = cfg
+          analyzeData();
+          buildHitsTable();
+          buildTopHitsTable();
+          R.utilities.removeCompounds();
+          renderChart();
+          if (R.library !== 'All') R.utilities.showCompounds();
       }
     });
   };
@@ -1339,7 +1316,7 @@
 
   global.Visualizer = {
     async init(input=null) {
-      GlobalConfig();
+      R.config = readConfigForm();
       bindEvents();
 
       if (input) {
