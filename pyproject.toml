@@ -1,0 +1,16 @@
+[project]
+name = "epv"
+version = "0.1.0"
+description = "Add your description here"
+authors = [
+    { name = "FEI YUAN", email = "fei.yuan@bcm.edu" }
+]
+requires-python = ">=3.12"
+dependencies = []
+
+[project.scripts]
+epv = "epv:main"
+
+[build-system]
+requires = ["uv_build>=0.8.15,<0.9.0"]
+build-backend = "uv_build"

@@ -1,0 +1,2 @@
+graft epv/_data
+global-include *.dwat *.md *.gz *.html *.css *.js LICENSE
