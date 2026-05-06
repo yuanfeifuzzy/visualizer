@@ -84,14 +84,29 @@ const SmilesManager = (function() {
      */
     const initObserver = () => {
         const observer = new MutationObserver((mutations) => {
+            let needsRender = false;
+
             mutations.forEach(mutation => {
-                if (mutation.addedNodes.length) {
-                    renderAll();
+                // Only trigger if actual elements (Type 1) are added
+                const addedElements = Array.from(mutation.addedNodes)
+                    .filter(node => node.nodeType === 1);
+
+                if (addedElements.length > 0) {
+                    // Efficiency: Only render within the new content
+                    addedElements.forEach(node => {
+                        // Check if the added node itself is a SMILES or contains them
+                        if (node.hasAttribute('data-smiles') || node.querySelector('[data-smiles]')) {
+                            renderAll(node);
+                        }
+                    });
                 }
             });
         });
 
-        observer.observe(document.body, { childList: true, subtree: true });
+        observer.observe(document.body, {
+            childList: true,
+            subtree: true
+        });
     };
 
     return {
