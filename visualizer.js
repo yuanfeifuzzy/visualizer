@@ -90,7 +90,7 @@
     chartPanel           : q('chartPanel'),
     configModal          : q('configModal'),
     encodingModal        : q('encodingModal'),
-    uploadModal   : q('uploadWarningModal'),
+    uploadModal          : q('uploadModal'),
     encodingTable        : q('encodingTable'),
     encodingSMILES       : q('encodingSMILES'),
     topHitsModal         : q('topHitsModal'),
@@ -410,8 +410,6 @@
         R.tops.get(R.vs).add(row);
         buildTopHitsTable();
       }
-      console.log(`after adding card ${id} to ${R.vs}`)
-      console.log(R.tops.get(R.vs))
     };
     const showCompounds = () => {
       const topsArray = Array.from(R.tops.get(R.vs) || []);
@@ -505,7 +503,7 @@
     };
     const assembleCompoundCard = (row, visible=true) => {
       const smiles = getSMILES(row);
-      const trs = smiles.map(s => `<tr><td colspan="2">${SmilesRenderer.smilesSVG(s, R.config.structure.width, R.config.structure.height)}</td></tr>`);
+      const trs = smiles.map(s => `<tr><td colspan="2"><div data-smiles="${s}" class="molecule-container"></div></td></tr>`);
       const text = assembleHoverText(row);
       const parts = text.split('<br>');
       const title = assembleCompoundName(row, true, true)
@@ -574,7 +572,6 @@
       card.style.top  = String(Math.round(top)) + 'px';
       document.body.appendChild(card);
 
-      SmilesRenderer.drawSMILES(card, {width: R.config.structure.width, height: R.config.structure.height});
       card = attachConnector(card)
       Draggable(card, header);
 
@@ -690,13 +687,21 @@
       const ss = pad(now.getSeconds());
       return `${mm}${dd}${yyyy}${hh}${min}${ss}`;
     };
+    const hideUploadModal = () => {
+      const modalElement = R.els.uploadModal;
+      const instance = bootstrap.Modal.getInstance(modalElement);
+      if (instance) {
+          instance.hide();
+      } else {
+          modalElement.close();
+      }
+    };
     const showUploadPanel = () => {
       R.els.switchers.classList.add('d-none');
       R.els.selectors.classList.add('d-none');
       R.els.chartPanel.classList.add('d-none');
+      hideUploadModal();
       R.els.uploadPanel.classList.remove('d-none');
-      const modal = bootstrap.Modal.getInstance(R.els.uploadWarningModal)
-      modal.hide();
       Object.assign(R, DATA);
     }
 
@@ -1259,7 +1264,7 @@
           R.io.saveSession();
           break;
         case 'uploadSession':
-          const modal = bootstrap.Modal.getOrCreateInstance(R.els.uploadWarningModal, {
+          const modal = bootstrap.Modal.getOrCreateInstance(R.els.uploadModal, {
             backdrop: true,
             keyboard: true,
             focus: true

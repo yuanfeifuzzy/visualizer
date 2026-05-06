@@ -11,8 +11,8 @@ const SmilesManager = (function() {
             const smiles = el.getAttribute('data-smiles');
             if (!smiles) return;
 
-            let height = el.parentElement.offsetHeight || 75;
-            let width = el.parentElement.offsetWidth || height * 2
+            let width = el.getAttribute('data-width') || 200;
+            let height = el.getAttribute('data-height') || 125;
 
             let canvas = el.querySelector('canvas.smiles-canvas');
             if (!canvas) {
@@ -23,14 +23,16 @@ const SmilesManager = (function() {
             }
 
             const options = {
-                width: width * dpr,
-                height: height * dpr,
-                padding: 10 * dpr,
-                bondThickness: 1,
-                fontSizeLarge: 6,
+                width: width,
+                height: height,
+                padding: 0,
+                bondThickness: 1.2,
+                bondLength: 15,
+                shortBondLength: 0.9,
+                fontSizeLarge: 6.3,
                 fontSizeSmall: 4,
-                overlapSensitivity: 0.3,
-                bondSpacing: 3.0,
+                overlapSensitivity: 0.42,
+                bondSpacing: 3.2,
                 compactDrawing: true,
                 themes: {
                     darkerLight: {
