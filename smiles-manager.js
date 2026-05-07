@@ -1,118 +1,159 @@
-const SmilesManager = (function() {
-    /**
-     * Finds all elements with data-smiles attribute and renders them
-     * @param {HTMLElement} container smiles_width smiles_height - The element to search within (defaults to document)
-     */
-    const renderAll = (container = document) => {
-        const dpr = window.devicePixelRatio || 1; // Usually 2 on Retina/High-DPI
-        // const dpr = 1; // Usually 2 on Retina/High-DPI
-        const elements = container.querySelectorAll('[data-smiles]');
-        elements.forEach(el => {
-            const smiles = el.getAttribute('data-smiles');
-            if (!smiles) return;
+const SmilesManager = (() => {
+    const DEFAULT_WIDTH = 200;
+    const DEFAULT_HEIGHT = 125;
 
-            let width = el.getAttribute('data-width') || 200;
-            let height = el.getAttribute('data-height') || 125;
-
-            let canvas = el.querySelector('canvas.smiles-canvas');
-            if (!canvas) {
-                canvas = document.createElement('canvas');
-                canvas.className = 'smiles-canvas';
-                el.innerHTML = '';
-                el.appendChild(canvas);
+    const DRAW_OPTIONS = {
+        width: DEFAULT_WIDTH,
+        height: DEFAULT_HEIGHT,
+        padding: 0,
+        compactDrawing: true,
+        bondThickness: 1.25,
+        bondLength: 12.5,
+        shortBondLength: 0.85,
+        bondSpacing: 2.8,
+        fontSizeLarge: 6,
+        fontSizeSmall: 3.8,
+        overlapSensitivity: 0.42,
+        themes: {
+            darkerLight: {
+                C: '#1a1a1a',
+                O: '#b91c1c',
+                N: '#1e40af',
+                F: '#15803d',
+                CL: '#0f766e',
+                BR: '#9a3412',
+                I: '#6b21a8',
+                P: '#92400e',
+                S: '#a16207',
+                B: '#92400e',
+                SI: '#92400e',
+                H: '#1a1a1a',
+                BACKGROUND: 'transparent'
             }
-
-            const options = {
-                width: width,
-                height: height,
-                padding: 0,
-                bondThickness: 1.2,
-                bondLength: 15,
-                shortBondLength: 0.9,
-                fontSizeLarge: 6.3,
-                fontSizeSmall: 4,
-                overlapSensitivity: 0.42,
-                bondSpacing: 3.2,
-                compactDrawing: true,
-                themes: {
-                    darkerLight: {
-                        C: '#1a1a1a',
-                        O: '#b91c1c', // Deep Red
-                        N: '#1e40af', // Deep Blue
-                        F: '#15803d', // Deep Green
-                        CL: '#0f766e', // Deep Teal
-                        BR: '#9a3412', // Deep Orange/Brown
-                        I: '#6b21a8', // Deep Purple
-                        P: '#92400e', // Deep Amber
-                        S: '#a16207', // Deep Yellow/Gold
-                        B: '#92400e',
-                        SI: '#92400e',
-                        H: '#1a1a1a',
-                        BACKGROUND: 'transparent'
-                    }
-                }
-            };
-            const smidraw = new SmilesDrawer.Drawer(options);
-
-            SmilesDrawer.parse(smiles, (tree) => {
-                smidraw.draw(tree, canvas, 'darkerLight', false);
-                canvas.style.width = width + 'px';
-                canvas.style.height = height + 'px';
-            }, (err) => {
-                el.innerText = `Invalid SMILES<br>${smiles}`;
-            });
-        });
+        }
     };
 
-    const showModal = (smiles) => {
+    function trimSvg(svg, width, height) {
+        const bbox = svg.getBBox();
+
+        svg.setAttribute('viewBox', `${bbox.x} ${bbox.y} ${bbox.width} ${bbox.height}`);
+
+        svg.setAttribute('width', width);
+        svg.setAttribute('height', height);
+        svg.setAttribute('preserveAspectRatio', 'xMidYMid meet');
+        svg.style.display = 'block';
+    }
+
+    function fitSvg(svg, width, height) {
+        const bbox = svg.getBBox();
+
+        // add a small margin
+        const pad = 15;
+
+        const vbX = bbox.x - pad;
+        const vbY = bbox.y - pad;
+        const vbW = bbox.width + pad * 2;
+        const vbH = bbox.height + pad * 2;
+
+        // DO NOT resize svg dimensions
+        svg.setAttribute("width", width);
+        svg.setAttribute("height", height);
+
+        // use natural molecule bounds only
+        svg.setAttribute("viewBox", `${vbX} ${vbY} ${vbW} ${vbH}`);
+
+        // center without aggressive scaling
+        svg.setAttribute("preserveAspectRatio", "xMidYMid meet");
+
+        svg.style.display = "block";
+    }
+
+    function createSvg(width, height) {
+        const svg = document.createElementNS(
+            'http://www.w3.org/2000/svg',
+            'svg'
+        );
+
+        svg.setAttribute('width', width);
+        svg.setAttribute('height', height);
+
+        svg.classList.add('smiles-svg');
+
+        return svg;
+    }
+
+    function renderElement(el) {
+        const smiles = el.dataset.smiles;
+        if (!smiles) return;
+
+        if (el.dataset.smilesRendered === '1') return;
+
+        el.innerHTML = '';
+
+        const svg = createSvg(DEFAULT_WIDTH, DEFAULT_HEIGHT);
+        el.appendChild(svg);
+
+        const drawer = new SmilesDrawer.SvgDrawer(DRAW_OPTIONS);
+
+        SmilesDrawer.parse(
+            smiles,
+            tree => {
+                drawer.draw(tree, svg, 'darkerLight', false);
+
+                requestAnimationFrame(() => {
+                    fitSvg(svg, DEFAULT_WIDTH, DEFAULT_HEIGHT);
+                });
+
+                el.dataset.smilesRendered = '1';
+            },
+            err => {
+                console.error(err);
+                el.innerHTML = `<div class="text-red-600 text-xs">Invalid SMILES</div>`;
+            }
+        );
+    }
+
+    function renderAll(container = document) {
+        container
+            .querySelectorAll('[data-smiles]')
+            .forEach(renderElement);
+    }
+
+    function showModal(smiles) {
         const modal = document.getElementById('smiles_modal');
         const container = document.getElementById('modal-smiles-container');
 
-        // 1. Clear previous content
-        container.innerHTML = `<div data-smiles="${smiles}" class="w-full h-full"></div>`;
-
-        // 2. Open the modal
+        container.innerHTML = `<div data-smiles="${smiles}" data-width="500" data-height="500" class="flex items-center justify-center"></div>`;
         modal.showModal();
+        renderAll(container);
+    }
 
-        // 3. Render the large version
-        // We pass the container to renderAll so it only processes the modal
-        SmilesManager.renderAll(container);
-    };
+    function initObserver() {
+        const observer = new MutationObserver(mutations => {
+            for (const mutation of mutations) {
+                for (const node of mutation.addedNodes) {
+                    if (node.nodeType !== 1) continue;
 
-    /**
-     * Initialize a MutationObserver to watch for new HTMX content or dynamic elements
-     */
-    const initObserver = () => {
-        const observer = new MutationObserver((mutations) => {
-            let needsRender = false;
+                    if (node.matches?.('[data-smiles]')) {
+                        renderElement(node);
+                    }
 
-            mutations.forEach(mutation => {
-                // Only trigger if actual elements (Type 1) are added
-                const addedElements = Array.from(mutation.addedNodes)
-                    .filter(node => node.nodeType === 1);
-
-                if (addedElements.length > 0) {
-                    // Efficiency: Only render within the new content
-                    addedElements.forEach(node => {
-                        // Check if the added node itself is a SMILES or contains them
-                        if (node.hasAttribute('data-smiles') || node.querySelector('[data-smiles]')) {
-                            renderAll(node);
-                        }
-                    });
+                    node.querySelectorAll?.('[data-smiles]').forEach(renderElement);
                 }
-            });
+            }
         });
 
         observer.observe(document.body, {
             childList: true,
             subtree: true
         });
-    };
+    }
 
     return {
         renderAll,
         showModal,
-        init: () => {
+
+        init() {
             renderAll();
             initObserver();
         }
@@ -121,4 +162,6 @@ const SmilesManager = (function() {
 
 window.SmilesManager = SmilesManager;
 
-document.addEventListener('DOMContentLoaded', () => SmilesManager.init());
+document.addEventListener('DOMContentLoaded', () => {
+    SmilesManager.init();
+});

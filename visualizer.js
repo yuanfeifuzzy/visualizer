@@ -638,9 +638,7 @@
           field: c,
           width: R.config.structure.width,
           formatter: (cell) => {
-            const html = SmilesRenderer.smilesSVG(cell.getValue(), R.config.structure.width, R.config.structure.height);
-            requestAnimationFrame(() => SmilesRenderer.drawSMILES(cell.getElement()));
-            return html
+            return `<div data-smiles="${cell.getValue()}" class="molecule-container"></div>`;
           }
         });
       }
@@ -1200,7 +1198,7 @@
           let smiles = R.utilities.getSMILES(row);
           smiles.push(smiles.shift());
           const cards = smiles.map(s => `<div class="col"><div class="card p-2">
-            ${SmilesRenderer.smilesSVG(s, R.config.structure.width, R.config.structure.height)}</div></div>`);
+            <div data-smiles="${cell.getValue()}" class="molecule-container"></div></div></div>`);
           R.els.encodingSMILES.innerHTML = cards.join('\n');
           SmilesRenderer.drawSMILES(R.els.encodingSMILES);
 
