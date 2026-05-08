@@ -1,6 +1,6 @@
 const SmilesManager = (() => {
-    const DEFAULT_WIDTH = 200;
-    const DEFAULT_HEIGHT = 125;
+    const DEFAULT_WIDTH = 240;
+    const DEFAULT_HEIGHT = 120;
 
     const DRAW_OPTIONS = {
         width: DEFAULT_WIDTH,
@@ -83,7 +83,7 @@ const SmilesManager = (() => {
     }
 
     function renderElement(el) {
-        const smiles = el.dataset.smiles;
+        const smiles = el.dataset.smiles?.trim();
         if (!smiles) return;
 
         if (el.dataset.smilesRendered === '1') return;

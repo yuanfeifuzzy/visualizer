@@ -426,7 +426,6 @@
       const cards = document.querySelectorAll('.compound-card');
       if (cards.length > 0) {
         for (const card of cards) {
-          console.log(`Removing card ${card.getAttribute('id')} from ${R.vs}`)
           removeCompound(card.getAttribute('id'), false)
         }
       }
@@ -440,7 +439,6 @@
       restylePoints(null, [id], 'remove');
 
       if (removeFromTop && R.tops.get(R.vs)) {
-        console.log(`removing card ${id} from top hits`)
           const topSet = R.tops.get(R.vs);
           const hitsSet = R.hits.get(R.vs);
 
@@ -514,7 +512,7 @@
 
       const key = row.key;
       let card = document.createElement('div');
-      const width = R.config.structure.width <= 190 ? 200 : R.config.structure.width + 10;
+      const width = R.config.structure.width <= 240 ? 250 : R.config.structure.width + 10;
       card.setAttribute('id', key)
       card.className = 'card compound-card';
       card.style.position = 'fixed';
@@ -597,7 +595,7 @@
       text.push(assembleKV(`<b>${R.y.replace('zscore_', '')}`, `${row[R.y.replace('zscore_', 'count_')]} (${row[R.y].toFixed(2)})</b>`, tabulate));
       const scores = R.scoreColumns.filter(c => (c !== R.x && c !== R.y));
       for (const c of scores) text.push(assembleKV(`${c.replace('zscore_', '')}`, `${row[c.replace('zscore_', 'count_')]} (${row[c].toFixed(2)})`, tabulate));
-      const hh = row.history_hits ? (row.history_hits.match(/,/g) || []).length + 1 : 0
+      const hh = (row.history_hits ?? "").toString().split(',').filter(Boolean).length;
       text.push(assembleKV('HH', `${hh}`, tabulate));
       return text
     };
@@ -674,7 +672,7 @@
             formatter: (cell) => {
                   const row = cell.getRow().getData();
                   const encodings = row['copies'] ? row['copies'] : 1;
-                  const hh = row['history_hits'] ? row['history_hits'].split(',').length : 0;
+                  const hh = (row.history_hits ?? "").toString().split(',').filter(Boolean).length;
                   return `
                       <div style="line-height:1.2;padding:2px 0;">
                           <div><strong>${encodings}</strong></div>
@@ -812,7 +810,6 @@
         buildHitsTable();
         buildTopHitsTable();
         renderChart();
-          console.log('Annotation clicked:', event.annotation.text);
       });
     }
   };
@@ -1031,7 +1028,6 @@
 
   const buildTopHitsTable = () => {
     const hits = R.hitsTable?.getData?.() ?? [];
-    console.log(hits)
     const keys = hits.map(hit => hit.key);
     const tops = Array.from(R.tops.get(R.vs) || []).map(top => ({...top, hits: keys.includes(top.key)}));
     let table = R.topHitsTable;
@@ -1066,7 +1062,6 @@
           const hitsSet = R.hits.get(R.vs) ?? R.hits.set(R.vs, new Set()).get(R.vs);
 
           const table = R.hitsTable;
-          console.log(`icon clicked, next = ${next}`)
           if (next) {
             table.updateOrAddData([data]).then( () => {
               hitsSet.add(data);
