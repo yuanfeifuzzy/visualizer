@@ -120,14 +120,7 @@
         complete: ({ data }) => {
           if (data && data.length) {
             resolve(data.map((row, i) => {
-              const fallbackCompound = `V${i}`;
-              const compoundValue = row.compound || fallbackCompound;
-              return {
-                ...row,
-                index: i,
-                compound: compoundValue,
-                key: R.utilities.keyForRow({ ...row, compound: compoundValue })
-              };
+              return { ...row, index: i }
             }));
           } else {
             reject(new Error("The text/file is empty or contains no valid data."));
@@ -261,12 +254,13 @@
     };
     const keyForRow = (row) => {
       if (Object.prototype.hasOwnProperty.call(row, 'compound') && row.compound != null && row.compound !== '') {
-        return String(row.compound);
+        return  String(row.compound);
       }
-        return [String(row.library ?? ''), ...R.smilesColumns.map(c => String(row?.[c] ?? ''))]
+      return [String(row.library ?? ''), ...R.smilesColumns.map(c => String(row?.[c] ?? ''))]
           .join('|').replace(/\s+/g, '')  // Remove all whitespace
           .replace(/[^a-zA-Z0-9_-]/g, '') // Remove all non-safe characters
-          .replace(/^[0-9_-]/, '');       // Remove leading numbers and underscores
+          .replace(/^[0-9_-]/, '')       // Remove leading numbers and underscores
+
     };
     const getSMILES = (row) => Object.entries(R.config.render).filter(([, v]) => v).map(([k]) => row?.[k] ?? '');
     const ClientXY = (id) => {
@@ -459,10 +453,7 @@
 
           buildTopHitsTable();
           buildHitsTable();
-      } else {
-        console.log(`not removing card ${id} from top hits`)
       }
-      console.log(R.tops.get(R.vs))
     };
     const restylePoints = (rows=null, ids=null, mode='add') => {
       const uids = ids || rows?.map(row => row.key);
@@ -1252,18 +1243,21 @@
 
       const action = btn.getAttribute('data-action');
       const key = btn.getAttribute('data-key');
-      let row = R.uniques.filter(r => r.key === key)[0];
+      let row = R.uniques.find(r => r.key === key);
+      if (!row) return;
 
       const hitsSet = R.hits.get(R.vs) ?? R.hits.set(R.vs, new Set()).get(R.vs);
 
       switch (action) {
         case 'encoding': {
           let smiles = R.utilities.getSMILES(row);
-          smiles.push(smiles.shift());
+          if (Array.isArray(smiles) && smiles.length > 1) {
+              smiles = [...smiles.slice(1), smiles[0]];
+          }
+          // smiles.push(smiles.shift());
           const cards = smiles.map(s => `<div class="col"><div class="card p-2">
-            <div data-smiles="${cell.getValue()}" class="molecule-container"></div></div></div>`);
+            <div data-smiles="${s}" class="molecule-container"></div></div></div>`);
           R.els.encodingSMILES.innerHTML = cards.join('\n');
-          SmilesRenderer.drawSMILES(R.els.encodingSMILES);
 
           const ids = R.duplicates[key];
           const rows = R.rows.filter(r => ids.includes(r.index));
@@ -1370,6 +1364,7 @@
 
     if (!R.rows || R.rows.length === 0) {
       R.rows = rows.map(row => (row.key = R.utilities.keyForRow(row), row));
+      R.rows = R.rows.map(row => (row.compound = row.compound || `V${row.index}`, row));
     }
 
     buildSelector();
