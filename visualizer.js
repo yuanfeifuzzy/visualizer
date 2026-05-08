@@ -588,7 +588,8 @@
       return text.join('<br>')
     };
     const assemblePlainText = (row) => {
-      let smiles = Object.entries(R.config.render).map(([k, v]) => `${k}: ${row?.[k] ?? ''}`);
+      const bb = { c1_smiles: 'BB1', c2_smiles: 'BB2', c3_smiles: 'BB3', SMILES: 'SMILES'}
+      let smiles = Object.entries(R.config.render).map(([k, v]) => `${bb[k]}: ${row?.[k] ?? ''}`);
       let ss = [`Compound: ${row.compound}`, ...smiles]
       const parts = assembleHoverText(row).split('<br>');
       const tags = ['<b>', '</b>'];
@@ -598,6 +599,9 @@
           s = s.replace(tag, '');
         }
         ss.push(s)
+      }
+      if (row.copies > 1) {
+        ss.push(`Encodings: ${row.copies}`)
       }
       return ss.join('\n')
     };
