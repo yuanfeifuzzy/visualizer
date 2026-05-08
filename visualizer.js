@@ -525,11 +525,10 @@
       footer.className = 'card-footer bg-white d-flex align-items-center p-1';
       footer.innerHTML = `<i class="bi bi-bag me-3" data-action="bag" data-key=${key} role="button" tabindex="0" title="Add to candidate"></i> ` +
         `<i class="bi bi-copy text-success me-3" data-action="copy" data-key=${key} role="button" tabindex="0" title="Copy"></i> ` +
-        `<i class="bi bi-envelope text-primary" data-action="email" data-key=${key} role="button" tabindex="0" title="E-mail"></i> `;
+        `<i class="bi bi-envelope text-primary me-3" data-action="email" data-key=${key} role="button" tabindex="0" title="E-mail"></i> `;
 
       if (row.copies > 1) {
-        footer.innerHTML += ' <button type="button" class="btn btn-outline-success rounded-pill btn-sm py-0" ' +
-                              `data-action="encoding" data-key="${key}">${row.copies}</button>`;
+        footer.innerHTML += `<span class="text-success" data-action="encoding" data-key=${key} role="button" tabIndex="0" title="Encodings">E: ${row.copies}</span> `;
       }
 
       footer.innerHTML += `<i class="bi bi-x-circle ms-auto text-danger" data-action="close" data-key=${key} role="button" tabindex="0" title="Close"></i>`;
@@ -580,7 +579,7 @@
       const scores = R.scoreColumns.filter(c => (c !== R.x && c !== R.y));
       for (const c of scores) text.push(assembleKV(`${c.replace('zscore_', '')}`, `${row[c.replace('zscore_', 'count_')]} (${row[c].toFixed(2)})`, tabulate));
       const hh = (row.history_hits ?? "").toString().split(',').filter(Boolean).length;
-      text.push(assembleKV('HH', `${hh}`, tabulate));
+      text.push(assembleKV('nHH', `${hh}`, tabulate));
       return text
     };
     const assembleHoverText = (row) => {
