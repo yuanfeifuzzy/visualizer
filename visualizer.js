@@ -800,6 +800,20 @@
             card ? R.utilities.removeCompound(id) : R.utilities.showCompound(id);
           });
       }
+    } else {
+      gd.on('plotly_clickannotation', function(event) {
+        const library = event.annotation.text;
+        R.els.btnLibrary.textContent = `Library: ${library}`;
+        R.els.btnLibrary.dataset.value = library;
+        R['library'] = library;
+        R.vs = `${R.x}.vs.${R.y}`
+
+        analyzeData();
+        buildHitsTable();
+        buildTopHitsTable();
+        renderChart();
+          console.log('Annotation clicked:', event.annotation.text);
+      });
     }
   };
 
@@ -906,6 +920,7 @@
             xanchor: 'center',
             yanchor: 'top',
             showarrow: false,
+            captureevents: true,
             font: {
                 size: R.config.fontSize,
                 family: R.config.fontFamily,
