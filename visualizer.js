@@ -860,7 +860,7 @@
 
         layout.annotations.push({
           text: String(library), xref: `${trace.xaxis} domain`, yref: `${trace.yaxis} domain`,
-          x: 0.5, y: 0.9, xanchor: 'center', yanchor: 'bottom', showarrow: false, bordercolor: '#fff',
+          x: 0.5, y: 0.86, xanchor: 'center', yanchor: 'bottom', showarrow: false, bordercolor: '#fff',
           font: {size: R.config.fontSize, family: R.config.fontFamily, color: maximum >= 1 ? '#ff0000' : '#000000'}
         });
       }
@@ -1105,7 +1105,10 @@
       } catch (error) {
         console.error("Error processing file:", error);
         R.els.dz.removeAllFiles(true);
-        R.onError?.(error) || console.error(error);
+        R.onError?.(error) || (() => {
+          R.els.chartPanel.innerHTML = `<div class="text-danger text-center fs-2 fw-bold pt-5">
+            Data Load Error: ${error?.message || String(error)}</div>`;
+        })();
       }
     });
 
