@@ -495,7 +495,7 @@
       const trs = smiles.map(s => `<tr><td colspan="2"><div data-smiles="${s}" class="molecule-container"></div></td></tr>`);
       const text = assembleHoverText(row);
       const parts = text.split('<br>');
-      const title = assembleCompoundName(row, true, true)
+      const title = row.compound
       for (let i=1; i < parts.length; i++) {
         let [k, v] = parts[i].split(': ');
         trs.push(`<tr><td class="text-start">${k}</td><td class="text-end">${v}</td></tr>`);
@@ -525,8 +525,14 @@
       footer.className = 'card-footer bg-white d-flex align-items-center p-1';
       footer.innerHTML = `<i class="bi bi-bag me-3" data-action="bag" data-key=${key} role="button" tabindex="0" title="Add to candidate"></i> ` +
         `<i class="bi bi-copy text-success me-3" data-action="copy" data-key=${key} role="button" tabindex="0" title="Copy"></i> ` +
-        `<i class="bi bi-envelope text-primary" data-action="email" data-key=${key} role="button" tabindex="0" title="E-mail"></i> ` +
-        `<i class="bi bi-x-circle ms-auto text-danger" data-action="close" data-key=${key} role="button" tabindex="0" title="Close"></i>`;
+        `<i class="bi bi-envelope text-primary" data-action="email" data-key=${key} role="button" tabindex="0" title="E-mail"></i> `;
+
+      if (row.copies > 1) {
+        footer.innerHTML += ' <button type="button" class="btn btn-outline-success rounded-pill btn-sm py-0" ' +
+                              `data-action="encoding" data-key="${key}">${row.copies}</button>`;
+      }
+
+      footer.innerHTML += `<i class="bi bi-x-circle ms-auto text-danger" data-action="close" data-key=${key} role="button" tabindex="0" title="Close"></i>`;
       card.appendChild(footer);
 
       card.style.display = 'block';
@@ -566,19 +572,6 @@
 
       return card
     };
-    const assembleCompoundName = (row, addCopyNumber=false, addButton=false) => {
-      let compound = row.compound;
-      if (row.copies > 1 && addCopyNumber) {
-        if (addButton) {
-          const button = ' <button type="button" class="btn btn-outline-success rounded-pill btn-sm py-0" ' +
-                                `data-action="encoding" data-key="${row.key}">${row.copies}</button>`;
-          compound += button
-        } else {
-          compound += ` [${row.copies}]`
-        }
-      }
-      return compound
-    };
     const assembleKV = (k, v, tabulate=false) => { return tabulate ? `<tr><td>${k}</td><td>${v}</td></tr>` : `${k}: ${v}`};
     const assembleCountScore = (row, tabulate=false) => {
       let text = [];
@@ -591,13 +584,13 @@
       return text
     };
     const assembleHoverText = (row) => {
-      let text = [`<b>${assembleCompoundName(row, true)}</b>`];
+      let text = [`<b>${row.compound}</b>`];
       text.push(...assembleCountScore(row));
       return text.join('<br>')
     };
     const assemblePlainText = (row) => {
       let smiles = Object.entries(R.config.render).map(([k, v]) => `${k}: ${row?.[k] ?? ''}`);
-      let ss = [`Compound: ${assembleCompoundName(row)}`, ...smiles]
+      let ss = [`Compound: ${row.compound}`, ...smiles]
       const parts = assembleHoverText(row).split('<br>');
       const tags = ['<b>', '</b>'];
       for (let i=1; i < parts.length; i++) {
@@ -728,7 +721,7 @@
       Object.assign(R, DATA);
     }
 
-    return { findColumns, assembleCompoundCard, assembleCompoundName, getSMILES, assemblePlainText,
+    return { findColumns, assembleCompoundCard, getSMILES, assemblePlainText,
              assembleKV, assembleCountScore, assembleHoverText, alignModebarWithLegend,
              buildColumns, keyForRow, tabulize, updateHitsCount, showUploadPanel,
              removeCompounds, removeCompound, showCompound, showCompounds, getCompactTimestamp,
