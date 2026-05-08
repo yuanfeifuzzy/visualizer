@@ -12,7 +12,7 @@ const SmilesManager = (() => {
         shortBondLength: 0.85,
         bondSpacing: 2.8,
         fontSizeLarge: 6,
-        fontSizeSmall: 3.8,
+        fontSizeSmall: 3,
         overlapSensitivity: 0.42,
         themes: {
             darkerLight: {
