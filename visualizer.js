@@ -642,18 +642,53 @@
           }
         });
       }
-      const counts = {title: 'Count', columns: []};
-      for (const c of R.countColumns) {counts.columns.push({title: c.replace('count_', ''), field: c, titleDownload: c})}
-      const scores = {title: 'z-score', columns: []};
-      for (const c of R.scoreColumns) {scores.columns.push({title: c.replace('zscore_', ''), field: c, titleDownload: c})}
-      const columns = [{title: 'Library', field: 'library'}, {title: 'Encodings', field: 'copies'}, smiles, counts, scores]
 
-      if (R.columns.includes('history_hits')) {
-        columns.push({title: 'HH', field: 'history_hits', sorter: 'number', formatter: (cell) => cell.getValue() ? cell.getValue().split(',').length : 0})
+      const metrics = { title: 'Count & z-score', columns: [] };
+      for (const countCol of R.countColumns) {
+          const sample = countCol.replace('count_', '');
+          const scoreCol = `zscore_${sample}`;
+          metrics.columns.push({
+              title: sample,
+              field: countCol,
+              variableHeight: true,
+              formatter: (cell) => {
+                  const row = cell.getRow().getData();
+                  const count = row[countCol];
+                  const zscore = row[scoreCol];
+                  return `
+                      <div style="line-height:1.2;padding:2px 0;">
+                          <div><strong>${count ?? ''}</strong></div>
+                          <div class="text-secondary">(${zscore ?? ''})</div>
+                      </div>
+                  `;
+              }
+          });
       }
-      return columns
+
+      const EnHH = {
+        title: 'EnHH',
+        columns: [
+          {
+            title: 'Encodings & nHH',
+            field: 'copies',
+            formatter: (cell) => {
+                  const row = cell.getRow().getData();
+                  const encodings = row['copies'] ? row['copies'] : 1;
+                  const hh = row['history_hits'] ? row['history_hits'].split(',').length : 0;
+                  return `
+                      <div style="line-height:1.2;padding:2px 0;">
+                          <div><strong>${encodings}</strong></div>
+                          <div class="text-secondary">(${hh})</div>
+                      </div>
+                  `;
+              }
+          }
+        ]
+      }
+
+      return [{title: 'Library', field: 'library'}, smiles, metrics, EnHH]
     };
-    const tabulize = (el, data, columns, layout='fitDataFill') => {
+    const tabulize = (el, data, columns, layout='fitColumns') => {
       el.innerHTML = '';
       return  new Tabulator(el, {
         data: data,
@@ -661,8 +696,9 @@
         index: 'key',
         layout: layout,
         height: '100%',
+        rowHeight: 125,
         nestedFieldSeparator: "->",
-        columnDefaults: { hozAlign: "center",  vertAlign: "middle", headerHozAlign: "center" },
+        columnDefaults: { hozAlign: "center",  vertAlign: "middle", headerHozAlign: "center", headerSort: false },
       });
     };
     const updateHitsCount = (n, btn, span) => {
@@ -967,6 +1003,7 @@
 
   const buildTopHitsTable = () => {
     const hits = R.hitsTable?.getData?.() ?? [];
+    console.log(hits)
     const keys = hits.map(hit => hit.key);
     const tops = Array.from(R.tops.get(R.vs) || []).map(top => ({...top, hits: keys.includes(top.key)}));
     let table = R.topHitsTable;
@@ -1255,7 +1292,6 @@
           R.utilities.removeCompound(key)
           break;
         case 'downloadTopHits':
-          console.log(R.vs)
           R.topHitsTable.download('csv', `${R.vs}.top.hits.csv`)
           break;
         case 'downloadHits':

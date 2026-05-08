@@ -57,3 +57,16 @@
 .tabulator-cell {
   background-color: transparent !important;
 }
+
+.tabulator .tabulator-header .tabulator-col,
+.tabulator .tabulator-header .tabulator-col-group {
+  background: white;
+  text-align: center;
+}
+
+.tabulator .tabulator-header .tabulator-col:not(.tabulator-col-group) .tabulator-col-content {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    height: 100%;
+}
