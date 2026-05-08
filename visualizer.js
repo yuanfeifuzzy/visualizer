@@ -666,10 +666,10 @@
       }
 
       const EnHH = {
-        title: 'EnHH',
+        title: 'Encodings',
         columns: [
           {
-            title: 'Encodings & nHH',
+            title: 'nHH',
             field: 'copies',
             formatter: (cell) => {
                   const row = cell.getRow().getData();
@@ -894,10 +894,23 @@
           showticklabels: !!showYticks, range: [yMin - yOffset, yMax + yOffset], ...axisDefault
         });
 
+        // layout.title = {text: library, x: 0.5, xanchor: 'center', y: 0.98, yanchor: 'top',
+        // font: {size: R.config.fontSize, family: R.config.fontFamily, color: maximum >= 1 ? '#ff0000' : '#000000'}}
+
         layout.annotations.push({
-          text: String(library), xref: `${trace.xaxis} domain`, yref: `${trace.yaxis} domain`,
-          x: 0.5, y: 0.86, xanchor: 'center', yanchor: 'bottom', showarrow: false, bordercolor: '#fff',
-          font: {size: R.config.fontSize, family: R.config.fontFamily, color: maximum >= 1 ? '#ff0000' : '#000000'}
+            text: String(library),
+            xref: `${trace.xaxis} domain`,
+            yref: `${trace.yaxis} domain`,
+            x: 0.5,
+            y: 0.98,
+            xanchor: 'center',
+            yanchor: 'top',
+            showarrow: false,
+            font: {
+                size: R.config.fontSize,
+                family: R.config.fontFamily,
+                color: maximum >= 1 ? '#ff0000' : '#000000'
+            }
         });
       }
 
