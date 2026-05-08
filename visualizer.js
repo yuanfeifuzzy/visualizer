@@ -593,8 +593,8 @@
     const assembleKV = (k, v, tabulate=false) => { return tabulate ? `<tr><td>${k}</td><td>${v}</td></tr>` : `${k}: ${v}`};
     const assembleCountScore = (row, tabulate=false) => {
       let text = [];
-      text.push(assembleKV(`<b>${R.x.replace('zscore_', '')} (x)`, `${row[R.x.replace('zscore_', 'count_')]} (${row[R.x].toFixed(2)})</b>`, tabulate));
-      text.push(assembleKV(`<b>${R.y.replace('zscore_', '')} (y)`, `${row[R.y.replace('zscore_', 'count_')]} (${row[R.y].toFixed(2)})</b>`, tabulate));
+      text.push(assembleKV(`<b>${R.x.replace('zscore_', '')}`, `${row[R.x.replace('zscore_', 'count_')]} (${row[R.x].toFixed(2)})</b>`, tabulate));
+      text.push(assembleKV(`<b>${R.y.replace('zscore_', '')}`, `${row[R.y.replace('zscore_', 'count_')]} (${row[R.y].toFixed(2)})</b>`, tabulate));
       const scores = R.scoreColumns.filter(c => (c !== R.x && c !== R.y));
       for (const c of scores) text.push(assembleKV(`${c.replace('zscore_', '')}`, `${row[c.replace('zscore_', 'count_')]} (${row[c].toFixed(2)})`, tabulate));
       const hh = row.history_hits ? (row.history_hits.match(/,/g) || []).length + 1 : 0
@@ -610,7 +610,7 @@
       let smiles = Object.entries(R.config.render).map(([k, v]) => `${k}: ${row?.[k] ?? ''}`);
       let ss = [`Compound: ${assembleCompoundName(row)}`, ...smiles]
       const parts = assembleHoverText(row).split('<br>');
-      const tags = ['<b>', '</b>', ' (x)', ' (y)'];
+      const tags = ['<b>', '</b>'];
       for (let i=1; i < parts.length; i++) {
         let s = parts[i];
         for (const tag of tags) {
