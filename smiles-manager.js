@@ -3,8 +3,6 @@ const SmilesManager = (() => {
     const DEFAULT_HEIGHT = 120;
 
     const DRAW_OPTIONS = {
-        width: DEFAULT_WIDTH,
-        height: DEFAULT_HEIGHT,
         padding: 0,
         compactDrawing: true,
         bondThickness: 1.25,
@@ -33,53 +31,17 @@ const SmilesManager = (() => {
         }
     };
 
-    function trimSvg(svg, width, height) {
-        const bbox = svg.getBBox();
-
-        svg.setAttribute('viewBox', `${bbox.x} ${bbox.y} ${bbox.width} ${bbox.height}`);
-
-        svg.setAttribute('width', width);
-        svg.setAttribute('height', height);
-        svg.setAttribute('preserveAspectRatio', 'xMidYMid meet');
-        svg.style.display = 'block';
-    }
-
-    function fitSvg(svg, width, height) {
-        const bbox = svg.getBBox();
-
-        // add a small margin
-        const pad = 15;
-
-        const vbX = bbox.x - pad;
-        const vbY = bbox.y - pad;
-        const vbW = bbox.width + pad * 2;
-        const vbH = bbox.height + pad * 2;
-
-        // DO NOT resize svg dimensions
-        svg.setAttribute("width", width);
-        svg.setAttribute("height", height);
-
-        // use natural molecule bounds only
-        svg.setAttribute("viewBox", `${vbX} ${vbY} ${vbW} ${vbH}`);
-
-        // center without aggressive scaling
-        svg.setAttribute("preserveAspectRatio", "xMidYMid meet");
-
-        svg.style.display = "block";
-    }
-
-    function createSvg(width, height) {
-        const svg = document.createElementNS(
-            'http://www.w3.org/2000/svg',
-            'svg'
-        );
-
-        svg.setAttribute('width', width);
-        svg.setAttribute('height', height);
-
-        svg.classList.add('smiles-svg');
-
-        return svg;
+    function fitSvg(svg, width, height, fine=false) {
+        requestAnimationFrame(() => {
+            const bbox = fine ? (svg.querySelector('g[mask]') || svg).getBBox() : svg.getBBox();
+            if (!bbox.width || !bbox.height) return;
+            const pad = fine ? Math.max(bbox.width, bbox.height) * 0.05 : 15;
+            svg.setAttribute('width', width);
+            svg.setAttribute('height', height);
+            svg.setAttribute('viewBox', `${bbox.x - pad} ${bbox.y - pad} ${bbox.width + pad * 2} ${bbox.height + pad * 2}`);
+            svg.setAttribute('preserveAspectRatio', 'xMidYMid meet');
+            svg.style.display = 'block';
+        });
     }
 
     function renderElement(el) {
@@ -87,23 +49,22 @@ const SmilesManager = (() => {
         if (!smiles) return;
 
         if (el.dataset.smilesRendered === '1') return;
-
         el.innerHTML = '';
 
-        const svg = createSvg(DEFAULT_WIDTH, DEFAULT_HEIGHT);
+        const width = parseInt(el.dataset.width ?? DEFAULT_WIDTH, 10);
+        const height = parseInt(el.dataset.height ?? DEFAULT_HEIGHT, 10);
+        const fine = ['true', '1', 'yes'].includes(el.dataset.fine?.toLowerCase());
+
+        const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+        svg.setAttribute('width', width.toString());
+        svg.setAttribute('height', height.toString());
+        svg.classList.add('smiles-svg');
         el.appendChild(svg);
 
-        const drawer = new SmilesDrawer.SvgDrawer(DRAW_OPTIONS);
-
-        SmilesDrawer.parse(
-            smiles,
-            tree => {
+        const drawer = new SmilesDrawer.SvgDrawer({ ...DRAW_OPTIONS, width: width, height: height});
+        SmilesDrawer.parse(smiles, tree => {
                 drawer.draw(tree, svg, 'darkerLight', false);
-
-                requestAnimationFrame(() => {
-                    fitSvg(svg, DEFAULT_WIDTH, DEFAULT_HEIGHT);
-                });
-
+                fitSvg(svg, width, height, fine);
                 el.dataset.smilesRendered = '1';
             },
             err => {
@@ -113,10 +74,8 @@ const SmilesManager = (() => {
         );
     }
 
-    function renderAll(container = document) {
-        container
-            .querySelectorAll('[data-smiles]')
-            .forEach(renderElement);
+    function renderSMILES(container = document) {
+        container.querySelectorAll('[data-smiles]').forEach(renderElement);
     }
 
     function showModal(smiles) {
@@ -125,7 +84,7 @@ const SmilesManager = (() => {
 
         container.innerHTML = `<div data-smiles="${smiles}" data-width="500" data-height="500" class="flex items-center justify-center"></div>`;
         modal.showModal();
-        renderAll(container);
+        renderSMILES(container);
     }
 
     function initObserver() {
@@ -150,11 +109,11 @@ const SmilesManager = (() => {
     }
 
     return {
-        renderAll,
+        renderSMILES,
         showModal,
 
         init() {
-            renderAll();
+            renderSMILES();
             initObserver();
         }
     };
