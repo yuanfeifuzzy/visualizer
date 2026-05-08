@@ -669,7 +669,7 @@
 
       return [{title: 'Library', field: 'library'}, smiles, metrics, EnHH]
     };
-    const tabulize = (el, data, columns, layout='fitColumns') => {
+    const tabularize = (el, data, columns, layout='fitColumns', rowHeight=125) => {
       el.innerHTML = '';
       return  new Tabulator(el, {
         data: data,
@@ -677,7 +677,7 @@
         index: 'key',
         layout: layout,
         height: '100%',
-        rowHeight: 125,
+        rowHeight: rowHeight,
         nestedFieldSeparator: "->",
         columnDefaults: { hozAlign: "center",  vertAlign: "middle", headerHozAlign: "center", headerSort: false },
       });
@@ -722,7 +722,7 @@
 
     return { findColumns, assembleCompoundCard, getSMILES, assemblePlainText,
              assembleKV, assembleCountScore, assembleHoverText, alignModebarWithLegend,
-             buildColumns, keyForRow, tabulize, updateHitsCount, showUploadPanel,
+             buildColumns, keyForRow, tabularize, updateHitsCount, showUploadPanel,
              removeCompounds, removeCompound, showCompound, showCompounds, getCompactTimestamp,
            };
   })();
@@ -1003,7 +1003,7 @@
       },
     };
       const columns = [deleteCol, ...R.utilities.buildColumns()];
-      table = R.utilities.tabulize(R.els.hitsTable, data, columns);
+      table = R.utilities.tabularize(R.els.hitsTable, data, columns);
     }
     R.hitsTable = table;
     R.utilities.updateHitsCount(data.length, R.els.btnHitsModal, R.els.numHits)
@@ -1063,7 +1063,7 @@
         }
       }
       const columns = [deleteColumn, hitsColumn, ...R.utilities.buildColumns()]
-      table = R.utilities.tabulize(R.els.topHitsTable, tops, columns);
+      table = R.utilities.tabularize(R.els.topHitsTable, tops, columns);
     }
     R.topHitsTable = table;
     R.utilities.updateHitsCount(tops.length, R.els.btnTopHitsModal, R.els.numTopHits);
@@ -1255,7 +1255,7 @@
           const rows = R.rows.filter(r => ids.includes(r.index));
           const excludes = ['Library', 'Structure', 'Encodings']
           const columns = R.utilities.buildColumns().filter(x => !excludes.includes(x.title));
-          R.utilities.tabulize(R.els.encodingTable, rows, columns, 'fitColumns');
+          R.utilities.tabularize(R.els.encodingTable, rows, columns, 'fitColumns', 40);
           const modal = bootstrap.Modal.getOrCreateInstance(R.els.encodingModal, {
             backdrop: true,
             keyboard: true,
