@@ -1272,9 +1272,9 @@
             const h = `
               <div class="col">
                   <div class="card p-2 h-100">
-                      <div class="flex-grow-1 d-flex align-items-center justify-content-center" 
-                           data-smiles="${s}" data-height="200"></div>
-                      <div class="text-muted text-center small">${label}</div>
+                    <div class="text-muted text-center small">${label}</div>
+                    <div class="flex-grow-1 d-flex align-items-center justify-content-center" 
+                         data-smiles="${s}" data-height="200"></div>
                   </div>
               </div>
             `;
