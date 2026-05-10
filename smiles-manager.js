@@ -1,126 +1,181 @@
-const SmilesManager = (() => {
-    const DEFAULT_WIDTH = 240;
-    const DEFAULT_HEIGHT = 120;
+/**
+ * A unified SmilesRender combines RDKit and SmilesDrawer capabilities, inject CSS,
+ * Droid Sans fonts, JavaScripts, auto discovery, and handles responsive SMILES rendering.
+ */
 
-    const DRAW_OPTIONS = {
-        padding: 0,
-        compactDrawing: true,
-        bondThickness: 1.25,
-        bondLength: 12.5,
-        shortBondLength: 0.85,
-        bondSpacing: 2.8,
-        fontSizeLarge: 6,
-        fontSizeSmall: 3,
-        overlapSensitivity: 0.42,
-        themes: {
-            darkerLight: {
-                C: '#1a1a1a',
-                O: '#b91c1c',
-                N: '#1e40af',
-                F: '#15803d',
-                CL: '#0f766e',
-                BR: '#9a3412',
-                I: '#6b21a8',
-                P: '#92400e',
-                S: '#a16207',
-                B: '#92400e',
-                SI: '#92400e',
-                H: '#1a1a1a',
-                BACKGROUND: 'transparent'
-            }
+const Render = (() => {
+    let RDKIT = null;
+    let IS_RDKIT_READY = false;
+    let IS_RDKIT_LOADING = false;
+    let rdkitQueue = [];
+    let observer = null;
+
+    const CONFIG = {
+        width: 200,
+        height: 200,
+        engine: 'rdkit',
+        rdkitSrc: 'https://unpkg.com/@rdkit/rdkit/dist/RDKit_minimal.js',
+        drawerSrc: 'https://unpkg.com/smiles-drawer@2.3.0/dist/smiles-drawer.min.js',
+        fontSrc: 'https://fonts.googleapis.com/css?family=Droid+Sans:400,700',
+        drawingDetails: {
+            bondLineWidth: 1.5,
+            fixedBondLength: 15,
+            fixedFontSize: 10,
+            padding: 0,
         }
     };
 
-    function fitSvg(svg, width, height, fine=false) {
-        requestAnimationFrame(() => {
-            const bbox = fine ? (svg.querySelector('g[mask]') || svg).getBBox() : svg.getBBox();
-            if (!bbox.width || !bbox.height) return;
-            const pad = fine ? Math.max(bbox.width, bbox.height) * 0.05 : 15;
-            svg.setAttribute('width', width);
-            svg.setAttribute('height', height);
-            svg.setAttribute('viewBox', `${bbox.x - pad} ${bbox.y - pad} ${bbox.width + pad * 2} ${bbox.height + pad * 2}`);
-            svg.setAttribute('preserveAspectRatio', 'xMidYMid meet');
-            svg.style.display = 'block';
+    /**
+     * Injects the necessary CSS and Google Fonts
+     */
+    function injectStyles(includeFonts = false) {
+        // Inject Base CSS
+        if (!document.getElementById('smiles-manager-styles')) {
+            const style = document.createElement('style');
+            style.id = 'smiles-manager-styles';
+            style.textContent = `
+                .smiles-container { 
+                    display: flex; 
+                    align-items: center; 
+                    justify-content: center; 
+                    overflow: hidden;
+                    max-width: 100%;
+                }
+                .smiles-svg { 
+                    max-width: 100%; 
+                    height: auto; 
+                    display: block; 
+                }
+                [data-smiles]:not([data-smiles-rendered="1"]) {
+                    min-height: 100px;
+                    background: rgba(0,0,0,0.02);
+                    border-radius: 8px;
+                }
+            `;
+            document.head.appendChild(style);
+        }
+
+        // Inject Droid Sans for SmilesDrawer
+        if (includeFonts && !document.getElementById('smiles-font-link')) {
+            const link = document.createElement('link');
+            link.id = 'smiles-font-link';
+            link.href = CONFIG.fontSrc;
+            link.rel = 'stylesheet';
+            document.head.appendChild(link);
+        }
+    }
+
+    function loadScript(src, id) {
+        return new Promise((resolve, reject) => {
+            if (document.getElementById(id)) return resolve();
+            const script = document.createElement('script');
+            script.src = src; script.id = id; script.async = true;
+            script.onload = resolve; script.onerror = reject;
+            document.head.appendChild(script);
+        });
+    }
+
+    function initRDKit(callback) {
+        if (IS_RDKIT_READY) return callback();
+        rdkitQueue.push(callback);
+        if (IS_RDKIT_LOADING) return;
+        IS_RDKIT_LOADING = true;
+        loadScript(CONFIG.rdkitSrc, 'rdkit-script').then(() => {
+            if (typeof initRDKitModule !== 'function') return;
+            initRDKitModule().then(m => {
+                RDKIT = m; IS_RDKIT_READY = true; IS_RDKIT_LOADING = false;
+                while (rdkitQueue.length) rdkitQueue.shift()();
+            });
         });
     }
 
     function renderElement(el) {
-        const smiles = el.dataset.smiles?.trim();
-        if (!smiles) return;
+        if (!el.dataset.smiles || el.dataset.smilesRendered === '1') return;
 
-        if (el.dataset.smilesRendered === '1') return;
-        el.innerHTML = '';
+        const engine = el.dataset.engine || CONFIG.engine;
+        const parent = el.parentElement;
+        const parentRect = parent.getBoundingClientRect();
 
-        const width = parseInt(el.dataset.width ?? DEFAULT_WIDTH, 10);
-        const height = parseInt(el.dataset.height ?? DEFAULT_HEIGHT, 10);
-        const fine = ['true', '1', 'yes'].includes(el.dataset.fine?.toLowerCase());
-
-        const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
-        svg.setAttribute('width', width.toString());
-        svg.setAttribute('height', height.toString());
-        svg.classList.add('smiles-svg');
-        el.appendChild(svg);
-
-        const drawer = new SmilesDrawer.SvgDrawer({ ...DRAW_OPTIONS, width: width, height: height});
-        SmilesDrawer.parse(smiles, tree => {
-                drawer.draw(tree, svg, 'darkerLight', false);
-                fitSvg(svg, width, height, fine);
-                el.dataset.smilesRendered = '1';
-            },
-            err => {
-                console.error(err);
-                el.innerHTML = `<div class="text-red-600 text-xs">Invalid SMILES</div>`;
-            }
-        );
-    }
-
-    function renderSMILES(container = document) {
-        container.querySelectorAll('[data-smiles]').forEach(renderElement);
-    }
-
-    function showModal(smiles) {
-        const modal = document.getElementById('smiles_modal');
-        const container = document.getElementById('modal-smiles-container');
-
-        container.innerHTML = `<div data-smiles="${smiles}" data-width="500" data-height="500" class="flex items-center justify-center"></div>`;
-        modal.showModal();
-        renderSMILES(container);
-    }
-
-    function initObserver() {
-        const observer = new MutationObserver(mutations => {
-            for (const mutation of mutations) {
-                for (const node of mutation.addedNodes) {
-                    if (node.nodeType !== 1) continue;
-
-                    if (node.matches?.('[data-smiles]')) {
-                        renderElement(node);
-                    }
-
-                    node.querySelectorAll?.('[data-smiles]').forEach(renderElement);
+        if (parentRect.width === 0) {
+            const resizeObserver = new ResizeObserver(() => {
+                if (parent.getBoundingClientRect().width > 0) {
+                    renderElement(el); // Try again now that we have width
+                    resizeObserver.disconnect();
                 }
-            }
-        });
+            });
+            resizeObserver.observe(parent);
+            return;
+        }
+        console.log(`parent width: ${parentRect.width}`);
 
-        observer.observe(document.body, {
-            childList: true,
-            subtree: true
-        });
+        let width = parseInt(el.dataset.width || (parentRect.width > 0 ? parentRect.width : CONFIG.width));
+        let height = parseInt(el.dataset.height || CONFIG.height);
+
+        el.classList.add('smiles-container');
+
+        if (engine === 'rdkit') {
+            initRDKit(() => {
+                try {
+                    const mol = RDKIT.get_mol(el.dataset.smiles.trim());
+                    const renderOpts = { width, height, ...CONFIG.drawingDetails };
+                    const svgText = mol.get_svg_with_highlights(JSON.stringify(renderOpts));
+                    console.log(width, height)
+                    el.innerHTML = svgText.replace('<svg', '<svg class="smiles-svg"');
+                    mol.delete();
+                    el.dataset.smilesRendered = '1';
+                } catch (e) {
+                    console.log(`RDKit Render Error: ${e}`)
+                    el.innerHTML = `<small style="color:red">RDKit Render Error</small>`;
+                }
+            });
+        } else {
+            // Ensure font is injected when using smiles-drawer
+            injectStyles(true);
+            loadScript(CONFIG.drawerSrc, 'smiles-drawer-script').then(() => {
+                el.innerHTML = `<svg width="${width}" height="${height}" class="smiles-svg"></svg>`;
+                const svg = el.querySelector('svg');
+                const drawer = new SmilesDrawer.SvgDrawer({ ...CONFIG.drawingDetails, width, height });
+                SmilesDrawer.parse(el.dataset.smiles.trim(), tree => {
+                    drawer.draw(tree, svg, 'light', false);
+                    el.dataset.smilesRendered = '1';
+                });
+            });
+        }
     }
 
     return {
-        renderSMILES,
-        showModal,
+        initSmilesRender(width = 200, height = 200, engine = 'rdkit', options = {}) {
+            CONFIG.width = width;
+            CONFIG.height = height;
+            CONFIG.engine = engine;
+            Object.assign(CONFIG.drawingDetails, options);
 
-        init() {
-            renderSMILES();
-            initObserver();
+            // Always inject base CSS; font is injected lazily if engine is smiles-drawer
+            injectStyles(engine === 'smiles-drawer');
+
+            document.querySelectorAll('[data-smiles-rendered="1"]').forEach(el => {
+                el.removeAttribute('data-smiles-rendered');
+                el.innerHTML = '';
+            });
+
+            document.querySelectorAll('[data-smiles]').forEach(renderElement);
+
+            if (!observer) {
+                observer = new MutationObserver(mutations => {
+                    mutations.forEach(m => m.addedNodes.forEach(node => {
+                        if (node.nodeType !== 1) return;
+                        if (node.hasAttribute('data-smiles')) renderElement(node);
+                        node.querySelectorAll('[data-smiles]').forEach(renderElement);
+                    }));
+                });
+                observer.observe(document.body, { childList: true, subtree: true });
+            }
         }
     };
 })();
 
-window.SmilesManager = SmilesManager;
+window.SmilesRender = Render;
 
 document.addEventListener('DOMContentLoaded', () => {
-    SmilesManager.init();
+    Render.initSmilesRender();
 });

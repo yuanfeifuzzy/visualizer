@@ -49,10 +49,10 @@
         <i class="bi bi-upload"></i>
       </button>
 
-      <button type="button" class="btn btn-light py-0 ms-2" title="Save current session" id="btnSaveSession"
+      <div class="btn btn-light py-0 ms-2" title="Save current session" id="btnSaveSession"
               data-action="saveSession">
         <i class="bi bi-download"></i>
-      </button>
+      </div>
 
       <button type="button" class="btn btn-light py-0 ms-1 me-2" title="Config"
               data-bs-toggle="modal" data-bs-target="#configModal">
@@ -95,7 +95,7 @@
         from a <strong>.json/.json.gz</strong> file to visualize the enrichment profile
       </p>
 
-      <form id="dropzone" class="dropzone dz-theme p-5 text-center"
+      <form id="dropzone" class="dropzone dz-theme p-5 text-center rounded border border-dark border-3 border-dotted bg-neutral"
             aria-label="Upload a file by click or drag-and-drop" action="#">
         <div class="dz-message align-middle">
           <div class="dz-title fw-semibold fs-5">Drag &amp; Drop File</div>
@@ -105,9 +105,7 @@
     </div>
   </div>
 
-  <div id="chartContainer">
-    <div id="chartPanel" class="w-100 h-100 d-none"></div>
-  </div>
+  <div id="chartPanel" class="d-none"></div>
 
   <div class="modal fade" id="helpModal" tabindex="-1" aria-labelledby="helpModalLabel" aria-hidden="true">
     <div class="modal-dialog modal-lg modal-dialog-centered">
@@ -183,7 +181,7 @@
             <div class="col-12 col-md-4">
               <label for="structWidth" class="form-label fw-bold">Structure Width (px)</label>
               <div class="input-group">
-                <input id="structWidth" type="number" class="form-control" min="50" max="500" step="10" value="200">
+                <input id="structWidth" type="number" class="form-control" min="50" max="500" step="10" value="250">
                 <span class="input-group-text">px</span>
               </div>
             </div>
@@ -262,7 +260,7 @@
                 <div class="col-4">
                   <div class="d-flex align-items-center">
                     <label for="colorTri" class="form-label mb-0 me-2">Tri-sython</label>
-                    <input id="colorTri" type="color" class="form-control form-control-color flex-grow-1 w-auto" value="#faaf05"
+                    <input id="colorTri" type="color" class="form-control form-control-color flex-grow-1 w-auto" value="#ffcc00"
                            title="Pick color for tri-sython">
                   </div>
                 </div>
@@ -327,7 +325,6 @@
   <script src="https://unpkg.com/tabulator-tables@6.3.1/dist/js/tabulator.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
   <script type="text/javascript" src="usage.js"></script>
-  <script type="text/javascript" src="smiles-drawer-2.3.0.js"></script>
   <script type="text/javascript" src="smiles-manager.js"></script>
   <script type="text/javascript" src="visualizer.js"></script>
   <script type="text/javascript">

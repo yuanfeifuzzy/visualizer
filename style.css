@@ -3,7 +3,7 @@
 }
 
 #uploadPanel { height: calc(100vh - 65px) }
-#chartContainer { height: calc(100vh - 65px) }
+#chartPanel { height: calc(100vh - 65px) }
 
 #hitsModal .modal-dialog, #topHitsModal .modal-dialog { max-width: 95vw; }
 #encodingModal .modal-dialog { max-width: 75vw; }
@@ -69,4 +69,12 @@
     align-items: center;
     justify-content: center;
     height: 100%;
+}
+
+.border-dotted {
+    border-style: dotted !important;
+}
+
+.bg-neutral {
+    background-color: #f8f9fa;
 }

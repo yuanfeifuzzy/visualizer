@@ -57,7 +57,7 @@
       },
 
       structure: {
-        width:  Number(q('structWidth')?.value || 100),
+        width:  Number(q('structWidth')?.value || 250),
         height: Number(q('structHeight')?.value || 100),
       },
 
@@ -67,7 +67,7 @@
       colors: {
         mono: q('colorMono')?.value || '#0d6efd',
         di:   q('colorDi')?.value   || '#6f42c1',
-        tri:  q('colorTri')?.value  || '#d63384',
+        tri:  q('colorTri')?.value  || '#ffcc00',
       },
     };
   }
@@ -481,7 +481,7 @@
 
           const update = {
             selectedpoints: [selected],
-            "selected.marker.size": 30,
+            "selected.marker.size": 40,
             "unselected.marker.opacity": 0.5
           };
           updaters.push(Plotly.restyle(R.els.chartPanel, update, [i]));
@@ -492,7 +492,7 @@
     };
     const assembleCompoundCard = (row, visible=true) => {
       const smiles = getSMILES(row);
-      const trs = smiles.map(s => `<tr><td colspan="2"><div data-smiles="${s}" class="molecule-container"></div></td></tr>`);
+      const trs = smiles.map(s => `<tr><td colspan="2"><div data-smiles="${s}" data-height="125"></div></td></tr>`);
       const text = assembleHoverText(row);
       const parts = text.split('<br>');
       const title = row.compound
@@ -612,7 +612,7 @@
 
       const gbox = R.els.chartPanel.getBoundingClientRect();
       const lbox = leg.getBoundingClientRect();
-      const top  = Math.max(0, Math.round(lbox.top - gbox.top));
+      const top  = Math.max(0, Math.round(lbox.top - gbox.top)) + 3;
       mb.style.top = top + 'px';
     };
     const buildColumns = () => {
@@ -623,7 +623,7 @@
           field: c,
           width: R.config.structure.width,
           formatter: (cell) => {
-            return `<div data-smiles="${cell.getValue()}" class="molecule-container"></div>`;
+            return `<div data-smiles="${cell.getValue()}" data-height="125"></div>`;
           }
         });
       }
@@ -812,7 +812,7 @@
       if ([3, 4, 5].includes(ax)) return cfg.colors.di;
       return cfg.colors.tri;
     };
-    const makeTrace = (name, rows, size=20) => {
+    const makeTrace = (name, rows, size=30) => {
       if (!Array.isArray(rows) || rows.length === 0) return null;
       return {
         ids: name.includes('sython') ? rows.map(r => r.key) : [],
@@ -832,7 +832,7 @@
     let layout = {
       margin: {l: 60, r: 5, t: 5, b: 70},
       hovermode: 'closest',
-      legend: {orientation: 'h', x: 0, xanchor: 'left', y: 1, yanchor: 'top'},
+      legend: {orientation: 'h', x: 0, xanchor: 'left', y: 0.99, yanchor: 'top'},
       font: { family: cfg.font, size: cfg.fontSize }
     };
     let config = {responsive: true, displayModeBar: true, displaylogo: false}
@@ -869,7 +869,7 @@
         const subset = R.uniques.filter(r => r.library === library);
         const maximum = Math.max(...subset.map(r => Number(r[x])));
         const axisKey = k => k.replace(/^([xy])(.*)$/, '$1axis$2');
-        const trace = makeTrace(library, subset, 10);
+        const trace = makeTrace(library, subset, 15);
 
         const ax = i + 1;
         trace.xaxis = (ax === 1) ? 'x' : `x${ax}`;
@@ -1150,7 +1150,6 @@
             initializePage(data);
         }
       } catch (error) {
-        console.error("Error processing file:", error);
         R.els.dz.removeAllFiles(true);
         R.onError?.(error) || (() => {
           R.els.chartPanel.innerHTML = `<div class="text-danger text-center fs-2 fw-bold pt-5">
@@ -1237,22 +1236,50 @@
       const btn = e.target.closest('[data-action]');
       if (!btn) return;
 
-      const action = btn.getAttribute('data-action');
-      const key = btn.getAttribute('data-key');
-      let row = R.uniques.find(r => r.key === key);
-      if (!row) return;
+      const action = btn.dataset.action;
+      const key = btn.dataset.key;
+      const actionsNeedKey = ['encoding', 'bag', 'copy', 'email', 'close'];
+      if (actionsNeedKey.includes(action) && !key) {
+        console.error(`Action "${action}" requires a key, but none was found.`);
+        return;
+      }
 
+      const row = R.uniques.find(r => r.key === key);
       const hitsSet = R.hits.get(R.vs) ?? R.hits.set(R.vs, new Set()).get(R.vs);
 
       switch (action) {
         case 'encoding': {
+          const title = document.getElementById('encodingModalTitle');
+          title.textContent = row.compound;
+
           let smiles = R.utilities.getSMILES(row);
           if (Array.isArray(smiles) && smiles.length > 1) {
               smiles = [...smiles.slice(1), smiles[0]];
           }
-          // smiles.push(smiles.shift());
-          const cards = smiles.map(s => `<div class="col"><div class="card p-2">
-            <div data-smiles="${s}" class="molecule-container"></div></div></div>`);
+
+          let cards = [];
+          const n = smiles.length;
+          for (let i = 0; i < n; i++) {
+            const s = smiles[i];
+            let label = '';
+            if (i < n) {
+              label = `BB${i+1}`;
+            }
+            if (i === n - 1) {
+              label = 'SMILES';
+            }
+
+            const h = `
+              <div class="col">
+                  <div class="card p-2 h-100">
+                      <div class="flex-grow-1 d-flex align-items-center justify-content-center" 
+                           data-smiles="${s}" data-height="200"></div>
+                      <div class="text-muted text-center small">${label}</div>
+                  </div>
+              </div>
+            `;
+            cards.push(h)
+          }
           R.els.encodingSMILES.innerHTML = cards.join('\n');
 
           const ids = R.duplicates[key];
@@ -1313,19 +1340,12 @@
         case 'saveSession':
           R.io.saveSession();
           break;
-        case 'uploadSession':
-          const modal = bootstrap.Modal.getOrCreateInstance(R.els.uploadModal, {
-            backdrop: true,
-            keyboard: true,
-            focus: true
-          });
-          modal.show();
-          break;
         case 'uploadAnyway':
           R.utilities.removeCompounds();
           R.utilities.showUploadPanel();
           break;
         case 'saveAndUpload':
+          R.utilities.removeCompounds();
           R.io.saveSession();
           R.utilities.showUploadPanel();
           break;
